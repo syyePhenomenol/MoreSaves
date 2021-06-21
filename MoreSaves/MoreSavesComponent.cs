@@ -1,16 +1,14 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using GlobalEnums;
-using ModCommon.Util;
 using Modding;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using static UnityEngine.UI.SaveSlotButton;
 using static UnityEngine.UI.SaveSlotButton.SlotState;
-using Logger = Modding.Logger;
 
 namespace MoreSaves
 {
@@ -38,8 +36,6 @@ namespace MoreSaves
 
         private int _queueLeft;
 
-        private InputHandler _ih;
-
         private string scene = Constants.MENU_SCENE;
 
         private static IEnumerable<SaveSlotButton> Slots => new[]
@@ -64,14 +60,14 @@ namespace MoreSaves
             DontDestroyOnLoad(this);
 
             UnityEngine.SceneManagement.SceneManager.activeSceneChanged -= SceneChanged;
-            ModHooks.Instance.GetSaveFileNameHook -= GetFilename;
-            ModHooks.Instance.SavegameSaveHook -= CheckAddMaxPages;
-            ModHooks.Instance.SavegameClearHook -= CheckRemoveMaxPages;
+            ModHooks.GetSaveFileNameHook -= GetFilename;
+            ModHooks.SavegameSaveHook -= CheckAddMaxPages;
+            ModHooks.SavegameClearHook -= CheckRemoveMaxPages;
 
             UnityEngine.SceneManagement.SceneManager.activeSceneChanged += SceneChanged;
-            ModHooks.Instance.GetSaveFileNameHook += GetFilename;
-            ModHooks.Instance.SavegameSaveHook += CheckAddMaxPages;
-            ModHooks.Instance.SavegameClearHook += CheckRemoveMaxPages;
+            ModHooks.GetSaveFileNameHook += GetFilename;
+            ModHooks.SavegameSaveHook += CheckAddMaxPages;
+            ModHooks.SavegameClearHook += CheckRemoveMaxPages;
         }
 
         private void SceneChanged(Scene arg0, Scene arg1)
@@ -82,9 +78,10 @@ namespace MoreSaves
         public void Update()
         {
             if (scene != Constants.MENU_SCENE) return;
+            
 
             float t = Time.realtimeSinceStartup;
-
+            
             if (_uim.menuState != MainMenuState.SAVE_PROFILES)
             {
                 MoreSaves.PageLabel.CrossFadeAlpha(0, 0.25f, false);
@@ -92,22 +89,18 @@ namespace MoreSaves
                 return;
             }
 
-            _ih = _ih ? _ih : _uim.GetAttr<UIManager, InputHandler>("ih");
-
-            HeroActions heroActions = _ih.inputActions;
-
             bool updateSaves = false;
 
-            bool holdingLeft = heroActions.paneLeft.IsPressed;
-            bool holdingRight = heroActions.paneRight.IsPressed;
+            bool holdingLeft =  MoreSaves.settings.keybinds.PreviousPage.IsPressed;
+            bool holdingRight = MoreSaves.settings.keybinds.NextPage.IsPressed;
 
-            if (heroActions.paneRight.WasPressed && t - _lastInput > 0.05f)
+            if (MoreSaves.settings.keybinds.NextPage.WasPressed && t - _lastInput > 0.05f)
             {
                 _firstInput = t;
                 _queueRight++;
             }
 
-            if (heroActions.paneLeft.WasPressed && t - _lastInput > 0.05f)
+            if (MoreSaves.settings.keybinds.PreviousPage.WasPressed && t - _lastInput > 0.05f)
             {
                 _firstInput = t;
                 _queueLeft++;
@@ -195,7 +188,7 @@ namespace MoreSaves
 
         public void ShowAllSaves()
         {
-            Logger.Log("[MoreSaves] Showing All Saves");
+            MoreSaves.Instance.Log("[MoreSaves] Showing All Saves");
 
             foreach (SaveSlotButton s in Slots)
             {
@@ -264,7 +257,8 @@ namespace MoreSaves
                     }
                     else
                     {
-                        self.SetAttr("saveStats", saveStats);
+                        ReflectionHelper.SetField(self,"saveStats",saveStats);
+                        //self.SetAttr("saveStats", saveStats);
                         self.ChangeSaveFileState(SaveFileStates.LoadedStats);
                     }
                 });
