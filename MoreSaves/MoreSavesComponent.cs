@@ -16,13 +16,13 @@ namespace MoreSaves
     {
         private const int MIN_PAGES = 2;
 
-        private const float TRANSISTION_TIME = 0.5f;
+        private const float  TRANSISTION_TIME = 0.5f;
 
         private const float INPUT_WINDOW = 0.4f;
 
-        private int _currentPage;
+        public static int _currentPage;
 
-        private int _maxPages;
+        public static int _maxPages;
 
         private bool _pagesHidden;
 
