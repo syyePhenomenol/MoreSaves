@@ -1,4 +1,5 @@
 using System.IO;
+using System.Linq;
 using JetBrains.Annotations;
 using Modding;
 using UnityEngine;
@@ -60,7 +61,7 @@ namespace MoreSaves
                 ))
                 .SetDefaultNavGraph(new ChainedNavGraph())
                 .AddContent(
-                    RegularGridLayout.CreateVerticalLayout(150f),
+                    RegularGridLayout.CreateVerticalLayout(105f),
                     c =>
                     {
                         c.AddKeybind(
@@ -80,6 +81,36 @@ namespace MoreSaves
                                 CancelAction = _ => UIManager.instance.UIGoToDynamicMenu(modListMenu)
                             }
                         ).AddMenuButton(
+                            "Make New Page",
+                            new MenuButtonConfig
+                            {
+                                Label = "Make New Page",
+                                SubmitAction = _ =>
+                                {
+                                    MoreSavesComponent._maxPages++;
+
+                                    PlayerPrefs.SetInt("MaxPages", MoreSavesComponent._maxPages);
+                                },
+                                CancelAction = _ => UIManager.instance.UIGoToDynamicMenu(modListMenu),
+
+                            }).AddMenuButton(
+                            "Remove Last Page (if redundant)",
+                            new MenuButtonConfig
+                            {
+                                Label = "Remove Last Page (if redundant)",
+                                SubmitAction = _ =>
+                                {
+                                    if (Enumerable.Range(1, 8).Any(i =>
+                                        File.Exists(
+                                            $"{Application.persistentDataPath}/user{(MoreSavesComponent._maxPages - 1) * 4 + i}.dat")))
+                                        return;
+                                    PlayerPrefs.SetInt("MaxPages", --MoreSavesComponent._maxPages);
+                                    PageLabel.text =
+                                        $"Page {MoreSavesComponent._currentPage + 1}/{MoreSavesComponent._maxPages}";
+                                },
+                                CancelAction = _ => UIManager.instance.UIGoToDynamicMenu(modListMenu),
+
+                            }).AddMenuButton(
                             "BackUpSaves",
                             new MenuButtonConfig
                             {
@@ -184,25 +215,15 @@ namespace MoreSaves
             {
                 string filename = Path.GetFileName(saveFile);
 
-                //ignore the other files in the folder
-                if(!filename.StartsWith("user")) continue;
-                
-                //ignore the .bak files and the user .json files API or QoL creates
-                if (!filename.EndsWith(".dat")) continue;
-                
-                //ignore the version labeled files
-                if (filename.Contains("_")) continue;
-                
-                //ignore any weird userN(1).dat
-                if (filename.Contains("(")) continue;
+                if (!IsSaveFile(filename)) continue;
                 
                 string dest = SavesFolder +"/"+filename;
 
                 c.AddMenuButton(
-                    $"Restore {filename.Replace("user","").Replace(".dat","")}",
+                    $"Restore {filename}",
                     new MenuButtonConfig
                     {
-                        Label = $"Restore {filename}",
+                        Label = $"Restore Save {filename.Replace("user","").Replace(".dat","")}",
                         SubmitAction = _ => File.Copy(saveFile, dest, true),
                         Style = MenuButtonStyle.VanillaStyle
 
@@ -216,7 +237,7 @@ namespace MoreSaves
                     Anchor = TextAnchor.MiddleCenter,
                     Size = 45,
                     Font = TextPanelConfig.TextFont.TrajanBold,
-                    Text = "Note: You may need to reopen the game to see backups made in this session",
+                    Text = "Note: You may need to open and close a save to see backups made in this session",
                 });
         }
 
@@ -256,6 +277,23 @@ namespace MoreSaves
             PageLabel.CrossFadeAlpha(0f, t, true);
         }
 
+        private bool IsSaveFile(string filename)
+        {
+            //ignore the other files in the folder
+            if(!filename.StartsWith("user")) return false;
+                
+            //ignore the .bak files and the user .json files API or QoL creates
+            if (!filename.EndsWith(".dat")) return false;
+                
+            //ignore the version labeled files
+            if (filename.Contains("_")) return false;
+                
+            //ignore any weird userN(1).dat
+            if (filename.Contains("(")) return false;
+
+            return true;
+        }
+
         private void BackupSaves(MenuButton obj)
         {
             if( !Directory.Exists(BackupFolder))
@@ -265,20 +303,10 @@ namespace MoreSaves
             {
                 string filename = Path.GetFileName(saveFile);
 
-                //ignore the other files in the folder
-                if(!filename.StartsWith("user")) continue;
-                
-                //ignore the .bak files and the user .json files API or QoL creates
-                if (!filename.EndsWith(".dat")) continue;
-                
-                //ignore the version labeled files
-                if (filename.Contains("_")) continue;
-                
-                //ignore any weird userN(1).dat
-                if (filename.Contains("(")) continue;
-
                 string dest = BackupFolder +"/"+filename;
-
+                
+                if (!IsSaveFile(filename)) continue;
+                
                 //copy it in
                 File.Copy( saveFile, dest, true );
 
