@@ -63,13 +63,15 @@ namespace MoreSaves
             ModHooks.GetSaveFileNameHook -= GetFilename;
             ModHooks.SavegameSaveHook -= CheckAddMaxPages;
             ModHooks.SavegameClearHook -= CheckRemoveMaxPages;
+            ModHooks.ApplicationQuitHook -= BackupSaves;
 
             UnityEngine.SceneManagement.SceneManager.activeSceneChanged += SceneChanged;
             ModHooks.GetSaveFileNameHook += GetFilename;
             ModHooks.SavegameSaveHook += CheckAddMaxPages;
             ModHooks.SavegameClearHook += CheckRemoveMaxPages;
+            ModHooks.ApplicationQuitHook += BackupSaves;
         }
-
+        
         private void SceneChanged(Scene arg0, Scene arg1)
         {
             scene = arg1.name;
@@ -224,6 +226,14 @@ namespace MoreSaves
             x = x % 4 == 0 ? 4 : x % 4;
 
             return "user" + (_currentPage * 4 + x) + ".dat";
+        }
+        
+        private void BackupSaves()
+        {
+            if (!MoreSaves.settings.AutoBackup) return;
+            
+            ModMenu.BackupSaves();
+            
         }
     }
 
