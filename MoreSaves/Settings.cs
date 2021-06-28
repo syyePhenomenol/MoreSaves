@@ -1,4 +1,4 @@
-﻿using InControl;
+using InControl;
 using Modding.Converters;
 using Newtonsoft.Json;
 
@@ -6,6 +6,7 @@ namespace MoreSaves
 {
     public class Settings
     {
+        public bool AutoBackup = false;
         [JsonConverter(typeof(PlayerActionSetConverter))]
         public KeyBinds keybinds = new KeyBinds();
     }
