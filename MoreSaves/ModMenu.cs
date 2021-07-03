@@ -1,4 +1,5 @@
-﻿using System;
+using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using JetBrains.Annotations;
@@ -11,7 +12,8 @@ namespace MoreSaves
 {
     internal class ModMenu
     {
-        private static MenuScreen menu;
+        private static MenuScreen AdditionalMenu;
+        private static MenuScreen MainMenu;
         public static MenuOptionHorizontal AutoBackupSelector;
 
         public static MenuScreen CreateCustomMenu(MenuScreen modListMenu)
@@ -19,7 +21,7 @@ namespace MoreSaves
             if(!Directory.Exists(MoreSaves.BackupFolder))
                 Directory.CreateDirectory(MoreSaves.BackupFolder);
 
-            var mainmenu = new MenuBuilder(UIManager.instance.UICanvas.gameObject, "MoreSavesMenu")
+            MainMenu = new MenuBuilder(UIManager.instance.UICanvas.gameObject, "MoreSavesMenu")
                 .CreateTitle("MoreSaves Settings", MenuTitleStyle.vanillaStyle)
                 .CreateContentPane(RectTransformData.FromSizeAndPos(
                     new RelVector2(new Vector2(1920f, 903f)),
@@ -115,7 +117,7 @@ namespace MoreSaves
                             new MenuButtonConfig
                             {
                                 Label = "Restore Saves",
-                                SubmitAction = _ => UIManager.instance.UIGoToDynamicMenu(menu),
+                                SubmitAction = _ => UIManager.instance.UIGoToDynamicMenu(AdditionalMenu),
                                 CancelAction = _ => UIManager.instance.UIGoToDynamicMenu(modListMenu),
                                 Proceed = true,
 
@@ -141,7 +143,13 @@ namespace MoreSaves
                     )
                 )
                 .Build();
-            menu = new MenuBuilder("Restore Saves")
+            AdditionalMenu = CreateAdditionalMenu(MainMenu);
+            return MainMenu;
+        }
+
+        private static MenuScreen CreateAdditionalMenu(MenuScreen mainmenu)
+        {
+            return new MenuBuilder("Restore Saves")
                 .CreateTitle("Restore Saves", MenuTitleStyle.vanillaStyle)
                 .CreateContentPane(RectTransformData.FromSizeAndPos(
                     new RelVector2(new Vector2(1920f, 903f)),
@@ -192,61 +200,62 @@ namespace MoreSaves
                             Offset = new Vector2(-310f, 0f)
                         }
                     },
-                    new RelLength((Directory.GetFiles(MoreSaves.BackupFolder).Length * (210f)) + 180f),
+                    new RelLength(Directory.GetFiles(MoreSaves.BackupFolder).Length * 210f),
                     RegularGridLayout.CreateVerticalLayout(105f),
-                    AddModMenuContent
+                    AddRestoreSaveFileContent
                 )).Build();
-            
-            
-
-            return mainmenu;
         }
+
+
+        //My reason for doing this instead of a simple foreach is ordering. with foreach 10 comes before 2 which is wrong
+        private static SortedDictionary<string,DateTime> SaveFiles = new SortedDictionary<string, DateTime>();
         
-        private static void AddModMenuContent(ContentArea c)
+        private static void AddRestoreSaveFileContent(ContentArea c)
         {
-            foreach(string saveFile in Directory.EnumerateFiles(MoreSaves.BackupFolder))
+            foreach (string saveFile in Directory.EnumerateFiles(MoreSaves.BackupFolder))
             {
                 string filename = Path.GetFileName(saveFile);
 
-                DateTime lastmodified = File.GetLastWriteTime(saveFile);
-
-                string lastsaved_date = $"{lastmodified.Day}/{lastmodified.Month}/{lastmodified.Year}";
-                string lastsaved_time = $"{lastmodified.Hour}:{lastmodified.Minute}:{lastmodified.Second}";
-
-                string lastsaved = $"This backup is from: {lastsaved_time} on {lastsaved_date}";
-                    
                 if (!IsSaveFile(filename)) continue;
                 
-                string dest = MoreSaves.SavesFolder +"/"+filename;
+                DateTime lastmodified = File.GetLastWriteTime(saveFile);
+
+                string filenumber = filename.Replace("user", "").Replace(".dat","");
+
+                if (filenumber.Length == 1) filenumber = $"0{filenumber}";
+                
+                SaveFiles.Add(filenumber,lastmodified);
+            }
+            
+            foreach (KeyValuePair<string, DateTime> BackedUpFiles in SaveFiles)
+            {
+                MoreSaves.Instance.Log(BackedUpFiles.Key);
+                string lastsaved_date = $"{BackedUpFiles.Value.Day}/{BackedUpFiles.Value.Month}/{BackedUpFiles.Value.Year}";
+                string lastsaved_time = $"{BackedUpFiles.Value.Hour}:{BackedUpFiles.Value.Minute}:{BackedUpFiles.Value.Second}";
+
+                string lastsaved = $"This backup is from: {lastsaved_time} on {lastsaved_date}";
+
+                string filenumber = BackedUpFiles.Key;
+                if (filenumber[0] == '0') filenumber = filenumber.Replace("0", "");
+
+                MoreSaves.Instance.Log(filenumber);
+                string source = $"{MoreSaves.BackupFolder}/user{filenumber}";
+                string dest = $"{MoreSaves.SavesFolder}/user{filenumber}";
 
                 c.AddMenuButton(
-                    $"Restore {filename}",
+                    $"Restore user{filenumber}",
                     new MenuButtonConfig
                     {
-                        Label = $"Restore Save {filename.Replace("user","").Replace(".dat","")}",
-                        SubmitAction = _ => File.Copy(saveFile, dest, true),
-                        Style = MenuButtonStyle.VanillaStyle
+                        Label = $"Restore Save {filenumber}",
+                        SubmitAction = _ => File.Copy(source, dest, true),
+                        Style = MenuButtonStyle.VanillaStyle,
+                        Description = new DescriptionInfo
+                        {
+                            Text = lastsaved
+                        }
 
-                    }).AddTextPanel("lastsave",
-                    new RelVector2(new Vector2(1000, 30)),
-                    new TextPanelConfig
-                    {
-                        Anchor = TextAnchor.UpperCenter,
-                        Size = 30,
-                        Font = TextPanelConfig.TextFont.TrajanBold,
-                        Text = lastsaved,
                     });
             }
-            c.AddTextPanel(
-                "Refresh Pls",
-                new RelVector2(new Vector2(800, 180)),
-                new TextPanelConfig
-                {
-                    Anchor = TextAnchor.MiddleCenter,
-                    Size = 45,
-                    Font = TextPanelConfig.TextFont.TrajanBold,
-                    Text = "Note: You may need to open and close a save to see backups made in this session",
-                });
         }
         private static bool IsSaveFile(string filename)
         {
@@ -266,7 +275,12 @@ namespace MoreSaves
         }
 
 
-        private static void BackupSaves(MenuButton obj) => BackupSaves();
+        private static void BackupSaves(MenuButton obj)
+        {
+            BackupSaves();
+            UnityEngine.Object.Destroy(AdditionalMenu);
+            AdditionalMenu = CreateAdditionalMenu(MainMenu);
+        }
         public static void BackupSaves()
         {
             if(!Directory.Exists(MoreSaves.BackupFolder))
