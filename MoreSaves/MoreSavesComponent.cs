@@ -1,42 +1,37 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using GlobalEnums;
+using InControl;
 using Modding;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
-using static UnityEngine.UI.SaveSlotButton;
 using static UnityEngine.UI.SaveSlotButton.SlotState;
+
+// ReSharper disable StringLiteralTypo
+// ReSharper disable CommentTypo
+// ReSharper disable IdentifierTypo
 
 namespace MoreSaves
 {
     internal class MoreSavesComponent : MonoBehaviour
     {
         private const int MIN_PAGES = 2;
-
         private const float  TRANSISTION_TIME = 0.5f;
-
         private const float INPUT_WINDOW = 0.4f;
-
-        public static int _currentPage;
-
-        public static int _maxPages;
-
-        private bool _pagesHidden;
-
-        private float _lastPageTransition;
-
-        private float _lastInput;
-
-        private float _firstInput;
-
-        private int _queueRight;
-
-        private int _queueLeft;
-
+        
         private string scene = Constants.MENU_SCENE;
+        public static int _currentPage;
+        public static int _maxPages;
+        private bool _pagesHidden;
+        private float _lastPageTransition;
+        private float _lastInput;
+        private float _firstInput;
+        private int _queueRight;
+        private int _queueLeft;
 
         private static IEnumerable<SaveSlotButton> Slots => new[]
         {
@@ -63,13 +58,95 @@ namespace MoreSaves
             ModHooks.GetSaveFileNameHook -= GetFilename;
             ModHooks.SavegameSaveHook -= CheckAddMaxPages;
             ModHooks.SavegameClearHook -= CheckRemoveMaxPages;
-            ModHooks.ApplicationQuitHook -= BackupSaves;
+            ModHooks.ApplicationQuitHook -= ClosingGameStuff;
+            On.UnityEngine.UI.SaveSlotButton.PresentSaveSlot -= ChangeSaveFileText;
+            On.UnityEngine.UI.SaveSlotButton.AnimateToSlotState -= FixNewSavesNumber;
+            On.MappableKey.OnBindingFound -= IHateMouse1;
 
             UnityEngine.SceneManagement.SceneManager.activeSceneChanged += SceneChanged;
             ModHooks.GetSaveFileNameHook += GetFilename;
             ModHooks.SavegameSaveHook += CheckAddMaxPages;
             ModHooks.SavegameClearHook += CheckRemoveMaxPages;
-            ModHooks.ApplicationQuitHook += BackupSaves;
+            ModHooks.ApplicationQuitHook += ClosingGameStuff;
+            //reconstruct some functions to facilitate changing saves name and number
+            On.UnityEngine.UI.SaveSlotButton.PresentSaveSlot += ChangeSaveFileText;
+            On.UnityEngine.UI.SaveSlotButton.AnimateToSlotState += FixNewSavesNumber;
+            On.MappableKey.OnBindingFound += IHateMouse1;
+        }
+        
+        
+        //checks for mouse 1 being input when mapping keys and yeets it if found
+        private bool IHateMouse1(On.MappableKey.orig_OnBindingFound orig, MappableKey self, PlayerAction action,
+            BindingSource binding)
+        {
+            if (!(action.Name == MoreSaves.settings.keybinds.NextPage.Name ||
+                  action.Name == MoreSaves.settings.keybinds.PreviousPage.Name)) return orig(self, action, binding);
+
+            if (binding.Name != "LeftButton") return orig(self, action, binding);
+
+            ReflectionHelper.GetField<MappableKey, UIButtonSkins>(self, "uibs").FinishedListeningForKey();
+            action.StopListeningForBinding();
+            self.AbortRebind();
+            return false;
+
+        }
+
+        private void ChangeSaveFileText(On.UnityEngine.UI.SaveSlotButton.orig_PresentSaveSlot orig,SaveSlotButton self,
+            SaveStats saveStats)
+        {
+            orig(self,saveStats);
+            
+            //change name and number
+            self.locationText.text = GetSaveFileText(self,saveStats);
+        }
+
+        
+        private IEnumerator FixNewSavesNumber(On.UnityEngine.UI.SaveSlotButton.orig_AnimateToSlotState orig, SaveSlotButton self, SaveSlotButton.SlotState nextstate)
+        {
+            //only fix for new save slots or else do normal stuff
+            if (nextstate != EMPTY_SLOT) return orig(self, nextstate);
+            
+            int slotnumber = ConvertSlotToNumber(self);
+            self.slotNumberText.GetComponent<Text>().text = (_currentPage * 4 + slotnumber).ToString();
+            return orig(self, nextstate);
+        }
+
+        private string GetSaveFileText(SaveSlotButton SaveSlotButton,SaveStats saveStats)
+        {
+            string text;
+
+            int slotnumber = ConvertSlotToNumber(SaveSlotButton);
+            int pagenumber = _currentPage + 1;
+
+            
+            //change the save number
+            SaveSlotButton.slotNumberText.GetComponent<Text>().text = ((pagenumber - 1) * 4 + slotnumber).ToString();
+
+            if (MoreSaves.SaveSlotNames.TryGetValue(((pagenumber - 1) * 4 + slotnumber), out var newtext))
+            {
+                text = newtext;
+            }
+            else
+            {
+                //make the text the normal text if not present in dictionary
+                text = GameManager.instance.GetFormattedMapZoneString(saveStats.mapZone)
+                    .Replace("<br>", Environment.NewLine);
+            }
+            return text;
+        }
+
+        //I use this because the saveslobutton contains a enum that'll tell the slot number. we cant rely
+        //on the text because it can change
+        private int ConvertSlotToNumber(SaveSlotButton saveSlotButton)
+        {
+            return saveSlotButton.saveSlot switch
+            {
+                SaveSlotButton.SaveSlot.SLOT_1 => 1,
+                SaveSlotButton.SaveSlot.SLOT_2 => 2,
+                SaveSlotButton.SaveSlot.SLOT_3 => 3,
+                SaveSlotButton.SaveSlot.SLOT_4 => 4,
+                _ => 0,
+            };
         }
         
         private void SceneChanged(Scene arg0, Scene arg1)
@@ -80,8 +157,6 @@ namespace MoreSaves
         public void Update()
         {
             if (scene != Constants.MENU_SCENE) return;
-            
-
             float t = Time.realtimeSinceStartup;
             
             if (_uim.menuState != MainMenuState.SAVE_PROFILES)
@@ -90,9 +165,7 @@ namespace MoreSaves
 
                 return;
             }
-
             bool updateSaves = false;
-
             bool holdingLeft =  MoreSaves.settings.keybinds.PreviousPage.IsPressed;
             bool holdingRight = MoreSaves.settings.keybinds.NextPage.IsPressed;
 
@@ -160,25 +233,11 @@ namespace MoreSaves
                 MoreSaves.PageLabel.CrossFadeAlpha(0, 0.25f, false);
         }
 
-        public void HideOne()
-        {
-            _uim.slotOne.HideSaveSlot();
-        }
-
-        public void HideTwo()
-        {
-            _uim.slotTwo.HideSaveSlot();
-        }
-
-        public void HideThree()
-        {
-            _uim.slotThree.HideSaveSlot();
-        }
-
-        public void HideFour()
-        {
-            _uim.slotFour.HideSaveSlot();
-        }
+        public void HideOne() => _uim.slotOne.HideSaveSlot();
+        public void HideTwo() => _uim.slotTwo.HideSaveSlot();
+        public void HideThree() => _uim.slotThree.HideSaveSlot();
+        public void HideFour() => _uim.slotFour.HideSaveSlot();
+        
 
         public void HideAllSaves()
         {
@@ -227,52 +286,14 @@ namespace MoreSaves
 
             return "user" + (_currentPage * 4 + x) + ".dat";
         }
-        
-        private void BackupSaves()
+
+        private void ClosingGameStuff()
         {
             if (!MoreSaves.settings.AutoBackup) return;
-            
+
             ModMenu.BackupSaves();
-            
-        }
-    }
 
-    internal static class SaveExtensions
-    {
-        private static void ChangeSaveFileState(this SaveSlotButton self, SaveFileStates nextSaveFileState)
-        {
-            self.saveFileState = nextSaveFileState;
-
-            if (self.isActiveAndEnabled) self.ShowRelevantModeForSaveFileState();
-        }
-
-        public static void _prepare(this SaveSlotButton self, GameManager gameManager)
-        {
-            self.ChangeSaveFileState(SaveFileStates.OperationInProgress);
-
-            Platform.Current.IsSaveSlotInUse((int) self.saveSlot + 1, delegate(bool fileExists)
-            {
-                if (!fileExists)
-                {
-                    self.ChangeSaveFileState(SaveFileStates.Empty);
-
-                    return;
-                }
-
-                gameManager.GetSaveStatsForSlot((int) self.saveSlot + 1, delegate(SaveStats saveStats)
-                {
-                    if (saveStats == null)
-                    {
-                        self.ChangeSaveFileState(SaveFileStates.Corrupted);
-                    }
-                    else
-                    {
-                        ReflectionHelper.SetField(self,"saveStats",saveStats);
-                        //self.SetAttr("saveStats", saveStats);
-                        self.ChangeSaveFileState(SaveFileStates.LoadedStats);
-                    }
-                });
-            });
+            ModMenu.SaveNameToFile();
         }
     }
 }

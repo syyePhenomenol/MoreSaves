@@ -1,10 +1,19 @@
+using System;
+using System.Collections.Generic;
 using InControl;
 using Modding.Converters;
 using Newtonsoft.Json;
+using UnityEngine;
 
 namespace MoreSaves
 {
-    public class Settings
+    [Serializable]
+    public class SaveNaming
+    {
+        public Dictionary<int, string> SaveSlotNames_Saver = new Dictionary<int, string>();
+    }
+    
+    public class GlobalSettings
     {
         public bool AutoBackup = false;
         [JsonConverter(typeof(PlayerActionSetConverter))]
