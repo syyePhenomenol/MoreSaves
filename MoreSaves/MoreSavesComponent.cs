@@ -9,7 +9,6 @@ using Modding;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
-using static UnityEngine.UI.SaveSlotButton.SlotState;
 
 // ReSharper disable StringLiteralTypo
 // ReSharper disable CommentTypo
@@ -54,6 +53,12 @@ namespace MoreSaves
 
             DontDestroyOnLoad(this);
 
+            UnLoadHooks();
+            LoadHooks();
+        }
+        
+        private void UnLoadHooks()
+        {
             UnityEngine.SceneManagement.SceneManager.activeSceneChanged -= SceneChanged;
             ModHooks.GetSaveFileNameHook -= GetFilename;
             ModHooks.SavegameSaveHook -= CheckAddMaxPages;
@@ -62,19 +67,23 @@ namespace MoreSaves
             On.UnityEngine.UI.SaveSlotButton.PresentSaveSlot -= ChangeSaveFileText;
             On.UnityEngine.UI.SaveSlotButton.AnimateToSlotState -= FixNewSavesNumber;
             On.MappableKey.OnBindingFound -= IHateMouse1;
+        }
 
+        private void LoadHooks()
+        {
             UnityEngine.SceneManagement.SceneManager.activeSceneChanged += SceneChanged;
             ModHooks.GetSaveFileNameHook += GetFilename;
             ModHooks.SavegameSaveHook += CheckAddMaxPages;
             ModHooks.SavegameClearHook += CheckRemoveMaxPages;
             ModHooks.ApplicationQuitHook += ClosingGameStuff;
+            
             //reconstruct some functions to facilitate changing saves name and number
             On.UnityEngine.UI.SaveSlotButton.PresentSaveSlot += ChangeSaveFileText;
             On.UnityEngine.UI.SaveSlotButton.AnimateToSlotState += FixNewSavesNumber;
             On.MappableKey.OnBindingFound += IHateMouse1;
         }
-        
-        
+
+
         //checks for mouse 1 being input when mapping keys and yeets it if found
         private bool IHateMouse1(On.MappableKey.orig_OnBindingFound orig, MappableKey self, PlayerAction action,
             BindingSource binding)
@@ -88,7 +97,6 @@ namespace MoreSaves
             action.StopListeningForBinding();
             self.AbortRebind();
             return false;
-
         }
 
         private void ChangeSaveFileText(On.UnityEngine.UI.SaveSlotButton.orig_PresentSaveSlot orig,SaveSlotButton self,
@@ -104,7 +112,7 @@ namespace MoreSaves
         private IEnumerator FixNewSavesNumber(On.UnityEngine.UI.SaveSlotButton.orig_AnimateToSlotState orig, SaveSlotButton self, SaveSlotButton.SlotState nextstate)
         {
             //only fix for new save slots or else do normal stuff
-            if (nextstate != EMPTY_SLOT) return orig(self, nextstate);
+            if (nextstate != SaveSlotButton.SlotState.EMPTY_SLOT) return orig(self, nextstate);
             
             int slotnumber = ConvertSlotToNumber(self);
             self.slotNumberText.GetComponent<Text>().text = (_currentPage * 4 + slotnumber).ToString();
@@ -227,12 +235,12 @@ namespace MoreSaves
 
             if (t - _lastPageTransition < TRANSISTION_TIME * 2) return;
 
-            if (_pagesHidden || Slots.All(x => x.state != HIDDEN))
+            if (_pagesHidden || Slots.All(x => x.state != UnityEngine.UI.SaveSlotButton.SlotState.HIDDEN))
                 MoreSaves.PageLabel.CrossFadeAlpha(1, 0.25f, false);
             else
                 MoreSaves.PageLabel.CrossFadeAlpha(0, 0.25f, false);
         }
-
+        
         public void HideOne() => _uim.slotOne.HideSaveSlot();
         public void HideTwo() => _uim.slotTwo.HideSaveSlot();
         public void HideThree() => _uim.slotThree.HideSaveSlot();
