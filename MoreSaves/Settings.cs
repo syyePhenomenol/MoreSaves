@@ -19,7 +19,7 @@ namespace MoreSaves
         [JsonConverter(typeof(PlayerActionSetConverter))]
         public KeyBinds keybinds = new KeyBinds();
     }
-
+    
     public class KeyBinds : PlayerActionSet
     {
         public PlayerAction NextPage;

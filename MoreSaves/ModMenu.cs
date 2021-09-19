@@ -3,10 +3,15 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
+using System.Runtime.Serialization.Formatters.Binary;
+using System.Text;
 using JetBrains.Annotations;
 using Modding;
 using Modding.Menu;
 using Modding.Menu.Config;
+using Modding.Patches;
+using Newtonsoft.Json;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -21,25 +26,30 @@ namespace MoreSaves
         private static MenuScreen MainMenu;
         private static MenuScreen RestoreSavesMenu;
         private static MenuScreen NameSavesMenu;
-        public static MenuOptionHorizontal AutoBackupSelector;
+        private static MenuScreen EditChooseMenu;
+        private static MenuScreen EditSavesMenu;
+
         private static MenuOptionHorizontal ChangeNameHorizontalOption;
         private static GameObject InputTextPanel;
         private static CanvasInput NameInput;
-        [UsedImplicitly]
-        private static string InputText;
+        private static CanvasInput SearchInput;
+
+        [UsedImplicitly] private static string InputText;
+        [UsedImplicitly] private static string InputText_EditSaves;
+
+        private static int EditSaveFileNumber;
+        private static SceneData EditSaveFileSceneData;
+        private static PlayerData EditSaveFilePlayerData;
+
+        private static List<GameObject> AllPDFields = new();
+        private static List<InputFieldInfo> AllInputs = new();
 
         #region MainMenu
-        
-        //create the main screen that shows up in mod menu
-        public static MenuScreen CreateCustomMenu(MenuScreen modListMenu)
-        {
-            MoreSaves.Instance.Log("Making new one");
-            //Create folder so it doesnt create NREs when looking for stuff in it.
-            if (!Directory.Exists(MoreSaves.BackupFolder))
-                Directory.CreateDirectory(MoreSaves.BackupFolder);
 
-            MainMenu = new MenuBuilder(UIManager.instance.UICanvas.gameObject, "MoreSavesMenu")
-                .CreateTitle("MoreSaves Settings", MenuTitleStyle.vanillaStyle)
+        private static MenuBuilder CreateMenuBuilder(string Title)
+        {
+            return new MenuBuilder(UIManager.instance.UICanvas.gameObject, Title)
+                .CreateTitle(Title, MenuTitleStyle.vanillaStyle)
                 .CreateContentPane(RectTransformData.FromSizeAndPos(
                     new RelVector2(new Vector2(1920f, 903f)),
                     new AnchoredPosition(
@@ -56,9 +66,58 @@ namespace MoreSaves
                         new Vector2(0f, -502f)
                     )
                 ))
-                .SetDefaultNavGraph(new GridNavGraph(1))
+                .SetDefaultNavGraph(new ChainedNavGraph());
+        }
+
+        private static MenuBuilder AddBackButton(this MenuBuilder builder, MenuScreen returnScreen)
+        {
+            return builder.AddControls(
+                new SingleContentLayout(new AnchoredPosition(
+                    new Vector2(0.5f, 0.5f),
+                    new Vector2(0.5f, 0.5f),
+                    new Vector2(0f, -64f)
+                )), c => c.AddMenuButton(
+                    "BackButton",
+                    new MenuButtonConfig
+                    {
+                        Label = "Back",
+                        CancelAction = _ => UIManager.instance.UIGoToDynamicMenu(returnScreen),
+                        SubmitAction = _ => UIManager.instance.UIGoToDynamicMenu(returnScreen),
+                        Style = MenuButtonStyle.VanillaStyle,
+                        Proceed = true
+                    }));
+        }
+
+        private static MenuBuilder AddControlButton(this MenuBuilder builder, string name, Vector2 offset,
+            Action<MenuSelectable> cancelAction, Action<MenuButton> submitAction)
+        {
+            return builder.AddControls(
+                new SingleContentLayout(new AnchoredPosition(
+                    new Vector2(0.5f, 0.5f),
+                    new Vector2(0.5f, 0.5f),
+                    offset
+                )), c => c.AddMenuButton(
+                    name,
+                    new MenuButtonConfig
+                    {
+                        Label = name,
+                        CancelAction = cancelAction,
+                        SubmitAction = submitAction,
+                        Style = MenuButtonStyle.VanillaStyle,
+                        Proceed = true
+                    }));
+        }
+
+        //create the main screen that shows up in mod menu
+        public static MenuScreen CreateCustomMenu(MenuScreen modListMenu)
+        {
+            //Create folder so it doesnt create NREs when looking for stuff in it.
+            if (!Directory.Exists(MoreSaves.BackupFolder))
+                Directory.CreateDirectory(MoreSaves.BackupFolder);
+
+            MainMenu = CreateMenuBuilder("MoreSaves Settings")
                 .AddContent(
-                    RegularGridLayout.CreateVerticalLayout(115f),
+                    RegularGridLayout.CreateVerticalLayout(95f),
                     c =>
                     {
                         c.AddKeybind(
@@ -103,7 +162,8 @@ namespace MoreSaves
                                     CancelAction = _ => UIManager.instance.UIGoToDynamicMenu(modListMenu),
                                     Description = new DescriptionInfo
                                     {
-                                        Text = "Pressing this will delete the last page. Note: it will only delete the page if it is redundant"
+                                        Text =
+                                            "Pressing this will delete the last page. Note: it will only delete the page if it is redundant"
                                     }
 
                                 })
@@ -122,8 +182,10 @@ namespace MoreSaves
                                     {
                                         Text = "It will back up your saves just before you quit the game"
                                     }
-                                }, out AutoBackupSelector)
-                            .AddMenuButton(
+                                }, out var AutoBackupSelector);
+                            AutoBackupSelector.menuSetting.RefreshValueFromGameSettings();
+                            
+                            c.AddMenuButton(
                                 "BackUpSaves",
                                 new MenuButtonConfig
                                 {
@@ -159,35 +221,32 @@ namespace MoreSaves
                                     Proceed = true,
                                     Description = new DescriptionInfo
                                     {
-                                        Text = "Pressing this will open a menu, which allows you to change the name on saves"
+                                        Text =
+                                            "Pressing this will open a menu, which allows you to change the name on saves"
+                                    }
+                                }).AddMenuButton(
+                                "EditSaveFile",
+                                new MenuButtonConfig
+                                {
+                                    Label = "Edit a save",
+                                    SubmitAction = _ => { UIManager.instance.UIGoToDynamicMenu(EditChooseMenu); },
+                                    CancelAction = _ => UIManager.instance.UIGoToDynamicMenu(modListMenu),
+                                    Proceed = true,
+                                    Description = new DescriptionInfo
+                                    {
+                                        Text = "Pressing this will open a menu, which allows you to edit saves"
                                     }
                                 });
                     }
                 )
-                .AddControls(
-                    new SingleContentLayout(new AnchoredPosition(
-                        new Vector2(0.5f, 0.5f),
-                        new Vector2(0.5f, 0.5f),
-                        new Vector2(0f, -64f)
-                    )),
-                    c => c.AddMenuButton(
-                        "BackButton",
-                        new MenuButtonConfig
-                        {
-                            Label = "Back",
-                            CancelAction = _ => UIManager.instance.UIGoToDynamicMenu(modListMenu),
-                            SubmitAction = _ => UIManager.instance.UIGoToDynamicMenu(modListMenu),
-                            Style = MenuButtonStyle.VanillaStyle,
-                            Proceed = true
-                        }
-                    )
-                )
+                .AddBackButton(modListMenu)
                 .Build();
 
             //make other screens we need
             //we need to do this after main menu is built or else NREs go brrrr
             RestoreSavesMenu = CreateRestoreSavesMenu(MainMenu);
             NameSavesMenu = CreateNamingSaveFile(MainMenu);
+            EditChooseMenu = CreateChooseEditSavesMenu(MainMenu);
 
             //This creates the text input panel we need for getting text for save file naming
             CreateInputPanel();
@@ -209,6 +268,7 @@ namespace MoreSaves
         #endregion
 
         #region Save File Naming Screen
+
         private static MenuScreen CreateNamingSaveFile(MenuScreen mainmenu)
         {
             CreateSaveFileDict(MoreSaves.SavesFolder);
@@ -220,28 +280,10 @@ namespace MoreSaves
                 UIManager.instance.UIGoToDynamicMenu(mainmenu);
             }
 
-            return new MenuBuilder("NameSaveFile")
-                .CreateTitle("Name Save Files", MenuTitleStyle.vanillaStyle)
-                .CreateContentPane(RectTransformData.FromSizeAndPos(
-                    new RelVector2(new Vector2(1920f, 903f)),
-                    new AnchoredPosition(
-                        new Vector2(0.5f, 0.5f),
-                        new Vector2(0.5f, 0.5f),
-                        new Vector2(0f, -60f)
-                    )
-                ))
-                .CreateControlPane(RectTransformData.FromSizeAndPos(
-                    new RelVector2(new Vector2(1920f, 259f)),
-                    new AnchoredPosition(
-                        new Vector2(0.5f, 0.5f),
-                        new Vector2(0.5f, 0.5f),
-                        new Vector2(0f, -502f)
-                    )
-                ))
-                .SetDefaultNavGraph(new ChainedNavGraph())
+            return CreateMenuBuilder("Name Save Files")
                 .AddContent(
                     RegularGridLayout.CreateVerticalLayout(400f),
-                    
+
                     // Create a panel to hold the input field
                     c => c.AddStaticPanel("MainTextPanel",
                             new RelVector2(new Vector2(200, 600)),
@@ -253,65 +295,18 @@ namespace MoreSaves
                                 Label = "Choose Save to name",
                                 Options = SaveFiles.ToArray(),
                                 CancelAction = ReturnToPreviousMenu,
-                                ApplySetting = (_, _) =>
-                                {
-                                    GameManager.instance.StartCoroutine(FindCurrentName());
-                                },
-                            }, out ChangeNameHorizontalOption)).AddControls(
-                    new SingleContentLayout(new AnchoredPosition(
-                        new Vector2(0.5f, 0.5f),
-                        new Vector2(0.5f, 0.5f),
-                        new Vector2(-200f, 64f)
-                    )),
-                    c => c.AddMenuButton(
-                        "ClearButton",
-                        new MenuButtonConfig
-                        {
-                            Label = "Clear",
-                            CancelAction = ReturnToPreviousMenu,
-                            SubmitAction = ClearSaveName,
-                            Proceed = false,
-                            Style = MenuButtonStyle.VanillaStyle
-                        }
-                    )).AddControls(
-                    new SingleContentLayout(new AnchoredPosition(
-                        new Vector2(0.5f, 0.5f),
-                        new Vector2(0.5f, 0.5f),
-                        new Vector2(200f, 64f)
-                    )),
-                    c => c.AddMenuButton(
-                        "ApplyButton",
-                        new MenuButtonConfig
-                        {
-                            Label = "Apply",
-                            CancelAction = ReturnToPreviousMenu,
-                            SubmitAction = ChangeTheName,
-                            Proceed = false,
-                            Style = MenuButtonStyle.VanillaStyle
-                        }
-                    )).AddControls(
-                    new SingleContentLayout(new AnchoredPosition(
-                        new Vector2(0.5f, 0.5f),
-                        new Vector2(0.5f, 0.5f),
-                        new Vector2(0f, -64f)
-                    )),
-                    c => c.AddMenuButton(
-                        "BackButton",
-                        new MenuButtonConfig
-                        {
-                            Label = "Back",
-                            CancelAction = ReturnToPreviousMenu,
-                            SubmitAction = (Action<MenuSelectable>) ReturnToPreviousMenu,
-                            Proceed = true,
-                            Style = MenuButtonStyle.VanillaStyle
-                        }
-                    )
-                ).Build();
+                                ApplySetting = (_, _) => { GameManager.instance.StartCoroutine(FindCurrentName()); },
+                            }, out ChangeNameHorizontalOption))
+                .AddControlButton("Clear", new Vector2(-200f, 64f), ReturnToPreviousMenu, ClearSaveName)
+                .AddControlButton("Apply", new Vector2(200f, 64f), ReturnToPreviousMenu, ChangeTheName)
+                .AddControlButton("Back", new Vector2(0f, -64f), ReturnToPreviousMenu, ReturnToPreviousMenu)
+                .Build();
         }
-        
+
         #endregion
 
         #region Save File Naming Functions
+
         private static void ClearSaveName(MenuButton obj) => GameManager.instance.StartCoroutine(ClearSaveName());
 
         private static IEnumerator ClearSaveName()
@@ -322,6 +317,7 @@ namespace MoreSaves
             {
                 MoreSaves.SaveSlotNames.Remove(filenumber);
             }
+
             NameInput.ChangePlaceholder("Write name here");
             NameInput.ClearText();
         }
@@ -337,7 +333,7 @@ namespace MoreSaves
         {
             return MoreSaves.SaveSlotNames.TryGetValue(filenumber, out var newtext) ? newtext : "Write name here";
         }
-        
+
         public static void SaveNameToFile()
         {
             var DictToSave = new SaveNaming
@@ -345,31 +341,30 @@ namespace MoreSaves
                 SaveSlotNames_Saver = MoreSaves.SaveSlotNames
             };
 
-            File.WriteAllText(MoreSaves.SaveNamesFile, 
-                Newtonsoft.Json.JsonConvert.SerializeObject(DictToSave));
+            File.WriteAllText(MoreSaves.SaveNamesFile, JsonConvert.SerializeObject(DictToSave));
         }
-        
+
         private static void CreateInputPanel()
         {
             // I dont need to do a null check because when every its called, it shouldnt exist
             NameInput = new CanvasInput(
-                InputTextPanel, 
-                "IP Input", 
+                InputTextPanel,
+                "IP Input",
                 MoreSaves.PanelImage,
-                new Vector2(GetCenter(800,true), GetCenter(100,false)),
+                new Vector2(GetCenter(800, true), GetCenter(100, false)),
                 Vector2.zero,
                 //dont ask why x,y is 150,400 (im not sure either)
                 //800,100 is width and height taht looks good
                 new Rect(150, 400, 800, 100),
-                CanvasUtil.TrajanBold, 
-                InputText, 
+                CanvasUtil.TrajanBold,
+                InputText,
                 GetFromNameDict(1),
                 36);
 
             //puts in center. dont ask why its divided by 2 (im not sure either)
             static int GetCenter(int size, bool Horizontal) => ((Horizontal ? Screen.width : Screen.height) - size) / 2;
         }
-        
+
         private static void ChangeTheName(MenuButton obj)
         {
             int filenumber = GetFileNumber();
@@ -380,7 +375,7 @@ namespace MoreSaves
             {
                 MoreSaves.SaveSlotNames[filenumber] = NewText;
             }
-            else MoreSaves.SaveSlotNames.Add(filenumber,NewText);
+            else MoreSaves.SaveSlotNames.Add(filenumber, NewText);
 
             GameManager.instance.StartCoroutine(FindCurrentName());
             NameInput.ClearText();
@@ -389,55 +384,57 @@ namespace MoreSaves
         private static int GetFileNumber()
         {
             string filenumber_string = ChangeNameHorizontalOption.optionText.text;
-                            
+
             //it is stored in 0x format for numbers < 10, so 11 doesnt come before 2
             if (filenumber_string[0] == '0') filenumber_string = filenumber_string.Replace("0", "");
 
             return Int32.Parse(filenumber_string);
         }
-        
+
         #endregion
-        
+
         #region Restore Saves Menu
+
         private static MenuScreen CreateRestoreSavesMenu(MenuScreen mainmenu)
         {
-            return new MenuBuilder("Restore Saves")
-                .CreateTitle("Restore Saves", MenuTitleStyle.vanillaStyle)
-                .CreateContentPane(RectTransformData.FromSizeAndPos(
-                    new RelVector2(new Vector2(1920f, 903f)),
-                    new AnchoredPosition(
-                        new Vector2(0.5f, 0.5f),
-                        new Vector2(0.5f, 0.5f),
-                        new Vector2(0f, -60f)
-                    )
-                ))
-                .CreateControlPane(RectTransformData.FromSizeAndPos(
-                    new RelVector2(new Vector2(1920f, 259f)),
-                    new AnchoredPosition(
-                        new Vector2(0.5f, 0.5f),
-                        new Vector2(0.5f, 0.5f),
-                        new Vector2(0f, -502f)
-                    )
-                ))
-                .SetDefaultNavGraph(new ChainedNavGraph())
-                .AddControls(
-                    new SingleContentLayout(new AnchoredPosition(
-                        new Vector2(0.5f, 0.5f),
-                        new Vector2(0.5f, 0.5f),
-                        new Vector2(0f, -64f)
-                    )),
-                    c => c.AddMenuButton(
-                        "BackButton",
+            static void AddRestoreSaveFileContent(ContentArea c)
+            {
+                CreateSaveFileDict(MoreSaves.BackupFolder);
+
+                foreach (KeyValuePair<string, DateTime> BackedUpFiles in BackupSaveFiles)
+                {
+                    string lastsaved_date =
+                        $"{BackedUpFiles.Value.Day}/{BackedUpFiles.Value.Month}/{BackedUpFiles.Value.Year}";
+                    string lastsaved_time =
+                        $"{BackedUpFiles.Value.Hour}:{BackedUpFiles.Value.Minute}:{BackedUpFiles.Value.Second}";
+
+                    string lastsaved = $"This backup is from: {lastsaved_time} on {lastsaved_date}";
+
+                    string filenumber = BackedUpFiles.Key;
+                    if (filenumber[0] == '0') filenumber = filenumber.Replace("0", "");
+
+                    string source = $"{MoreSaves.BackupFolder}user{filenumber}";
+                    string dest = $"{MoreSaves.SavesFolder}user{filenumber}";
+
+                    c.AddMenuButton(
+                        $"Restore user{filenumber}",
                         new MenuButtonConfig
                         {
-                            Label = "Back",
-                            CancelAction = _ => UIManager.instance.UIGoToDynamicMenu(mainmenu),
-                            SubmitAction = _ => UIManager.instance.UIGoToDynamicMenu(mainmenu),
-                            Proceed = true,
-                            Style = MenuButtonStyle.VanillaStyle
-                        }
-                    )
-                ).AddContent(new NullContentLayout(), c => c.AddScrollPaneContent(
+                            Label = $"Restore Save {filenumber}",
+                            SubmitAction = _ => File.Copy(source, dest, true),
+                            Style = MenuButtonStyle.VanillaStyle,
+                            Description = new DescriptionInfo
+                            {
+                                Text = lastsaved
+                            }
+
+                        });
+                }
+            }
+
+            return CreateMenuBuilder("Restore Saves")
+                .AddBackButton(mainmenu)
+                .AddContent(new NullContentLayout(), c => c.AddScrollPaneContent(
                     new ScrollbarConfig
                     {
                         CancelAction = _ => UIManager.instance.UIGoToDynamicMenu(mainmenu),
@@ -457,112 +454,564 @@ namespace MoreSaves
                     AddRestoreSaveFileContent
                 )).Build();
         }
-        
+
         #endregion
 
         #region Restore Saves Functions
+
         //My reason for doing this instead of a simple foreach is ordering. with foreach 10 comes before 2 which is wrong
         private static SortedSet<string> SaveFiles = new SortedSet<string>();
-        private static SortedDictionary<string,DateTime> BackupSaveFiles = new SortedDictionary<string, DateTime>();
+        private static SortedDictionary<string, DateTime> BackupSaveFiles = new SortedDictionary<string, DateTime>();
 
         private static void CreateSaveFileDict(string whichFolder)
         {
             if (whichFolder == MoreSaves.BackupFolder) BackupSaveFiles.Clear();
             if (whichFolder == MoreSaves.SavesFolder) SaveFiles.Clear();
-            
+
             foreach (string saveFile in Directory.EnumerateFiles(whichFolder))
             {
                 string filename = Path.GetFileName(saveFile);
 
                 if (!IsSaveFile(filename)) continue;
-                
+
                 DateTime lastmodified = File.GetLastWriteTime(saveFile);
 
-                string filenumber = filename.Replace("user", "").Replace(".dat","");
+                string filenumber = filename.Replace("user", "").Replace(".dat", "");
 
                 if (filenumber.Length == 1) filenumber = $"0{filenumber}";
-                
-                if (whichFolder == MoreSaves.BackupFolder) BackupSaveFiles.Add(filenumber,lastmodified);
+
+                if (whichFolder == MoreSaves.BackupFolder) BackupSaveFiles.Add(filenumber, lastmodified);
                 if (whichFolder == MoreSaves.SavesFolder) SaveFiles.Add(filenumber);
             }
         }
-        
-        private static void AddRestoreSaveFileContent(ContentArea c)
-        {
-            CreateSaveFileDict(MoreSaves.BackupFolder);
-            
-            foreach (KeyValuePair<string, DateTime> BackedUpFiles in BackupSaveFiles)
-            {
-                string lastsaved_date = $"{BackedUpFiles.Value.Day}/{BackedUpFiles.Value.Month}/{BackedUpFiles.Value.Year}";
-                string lastsaved_time = $"{BackedUpFiles.Value.Hour}:{BackedUpFiles.Value.Minute}:{BackedUpFiles.Value.Second}";
 
-                string lastsaved = $"This backup is from: {lastsaved_time} on {lastsaved_date}";
-
-                string filenumber = BackedUpFiles.Key;
-                if (filenumber[0] == '0') filenumber = filenumber.Replace("0", "");
-
-                string source = $"{MoreSaves.BackupFolder}user{filenumber}";
-                string dest = $"{MoreSaves.SavesFolder}user{filenumber}";
-
-                c.AddMenuButton(
-                    $"Restore user{filenumber}",
-                    new MenuButtonConfig
-                    {
-                        Label = $"Restore Save {filenumber}",
-                        SubmitAction = _ => File.Copy(source, dest, true),
-                        Style = MenuButtonStyle.VanillaStyle,
-                        Description = new DescriptionInfo
-                        {
-                            Text = lastsaved
-                        }
-
-                    });
-            }
-        }
         private static bool IsSaveFile(string filename)
         {
             //ignore the other files in the folder
-            if(!filename.StartsWith("user")) return false;
-                
+            if (!filename.StartsWith("user")) return false;
+
             //ignore the .bak files and the user .json files API or QoL creates
             if (!filename.EndsWith(".dat")) return false;
-                
+
             //ignore the version labeled files
             if (filename.Contains("_")) return false;
-                
+
             //ignore any weird userN(1).dat
             if (filename.Contains("(")) return false;
 
             return true;
         }
-        
+
         private static void BackupSaves(MenuButton obj)
         {
             BackupSaves();
-            
+
             //i need to delete and remake it to make sure the new save files that are backed up show up in the menu
             UnityEngine.Object.Destroy(RestoreSavesMenu);
             RestoreSavesMenu = CreateRestoreSavesMenu(MainMenu);
         }
+
         public static void BackupSaves()
         {
-            if(!Directory.Exists(MoreSaves.BackupFolder))
+            if (!Directory.Exists(MoreSaves.BackupFolder))
                 Directory.CreateDirectory(MoreSaves.BackupFolder);
-            
-            foreach(string saveFile in Directory.EnumerateFiles(MoreSaves.SavesFolder))
+
+            foreach (string saveFile in Directory.EnumerateFiles(MoreSaves.SavesFolder))
             {
                 string filename = Path.GetFileName(saveFile);
 
-                string dest = MoreSaves.BackupFolder +filename;
-                
-                if (!IsSaveFile(filename)) continue;
-                
-                //copy it in
-                File.Copy( saveFile, dest, true);
+                string dest = MoreSaves.BackupFolder + filename;
 
-                MoreSaves.Instance.Log( "Copied " + saveFile + " to " + dest );
+                if (!IsSaveFile(filename)) continue;
+
+                //copy it in
+                File.Copy(saveFile, dest, true);
+
+                MoreSaves.Instance.Log("Copied " + saveFile + " to " + dest);
             }
         }
+
         #endregion
+
+        #region Edit Saves
+
+        private static MenuScreen CreateChooseEditSavesMenu(MenuScreen mainmenu)
+        {
+            CreateSaveFileDict(MoreSaves.SavesFolder);
+
+            static void AddEditSaveFileContent(ContentArea c)
+            {
+                foreach (var filenumber in SaveFiles)
+                {
+                    c.AddMenuButton(
+                        $"Restore user{filenumber}",
+                        new MenuButtonConfig
+                        {
+                            Label = $"Edit  Save {filenumber}",
+                            SubmitAction = _ =>
+                            {
+                                UnityEngine.Object.Destroy(EditSavesMenu);
+                                AllPDFields.Clear();
+                                EditSavesMenu = CreateEditSavesMenu(EditChooseMenu, filenumber);
+                                UIManager.instance.UIGoToDynamicMenu(EditSavesMenu);
+                            },
+                            Style = MenuButtonStyle.VanillaStyle,
+                        });
+                }
+            }
+
+            return CreateMenuBuilder("Choose Edit Saves")
+                .AddBackButton(mainmenu)
+                .AddContent(new NullContentLayout(), c => c.AddScrollPaneContent(
+                    new ScrollbarConfig
+                    {
+                        CancelAction = _ => UIManager.instance.UIGoToDynamicMenu(mainmenu),
+                        Navigation = new Navigation
+                        {
+                            mode = Navigation.Mode.Explicit,
+                        },
+                        Position = new AnchoredPosition
+                        {
+                            ChildAnchor = new Vector2(0f, 1f),
+                            ParentAnchor = new Vector2(1f, 1f),
+                            Offset = new Vector2(-310f, 0f)
+                        }
+                    },
+                    new RelLength(105f * SaveFiles.Count),
+                    RegularGridLayout.CreateVerticalLayout(105f),
+                    AddEditSaveFileContent
+                )).Build();
+        }
+
+        private static MenuScreen CreateEditSavesMenu(MenuScreen editChooseMenu, string filenumber)
+        {
+            EditSaveFileNumber = Int32.Parse(filenumber);
+            var SaveData = ReadFromSaveFile(EditSaveFileNumber);
+            EditSaveFilePlayerData = SaveData.PlayerData;
+            EditSaveFileSceneData = SaveData.SceneData;
+
+            return CreateMenuBuilder("Edit Saves")
+                .AddControlButton("Back", new Vector2(0f, -64f), SaveChanges, SaveChanges)
+                .AddContent(new NullContentLayout(), c => c.AddScrollPaneContent(
+                    new ScrollbarConfig
+                    {
+                        CancelAction = _ => UIManager.instance.UIGoToDynamicMenu(editChooseMenu),
+                        Navigation = new Navigation
+                        {
+                            mode = Navigation.Mode.Explicit,
+                        },
+                        Position = new AnchoredPosition
+                        {
+                            ChildAnchor = new Vector2(0f, 1f),
+                            ParentAnchor = new Vector2(1f, 1f),
+                            Offset = new Vector2(-310f, 0f)
+                        }
+                    },
+                    new RelLength(105 * EditSaveFilePlayerData.GetType().GetFields().ToArray().Length),
+                    RegularGridLayout.CreateVerticalLayout(105f),
+                    AddSaveFileContent
+                )).Build();
+        }
+        
+        private static void AddSaveFileContent(ContentArea c)
+            {
+                var fields = EditSaveFilePlayerData.GetType().GetFields();
+
+                string[] BoolArray = {"True", "False"};
+                string[] IntArray = Enumerable.Range(-100, 99999).Select(x => x.ToString()).ToArray();
+
+                c.AddStaticPanel("TextPanel",
+                    new RelVector2(new Vector2(200, 105)),
+                    out var TextPanel);
+
+                SearchInput = new CanvasInput(
+                    TextPanel,
+                    "TextPanel",
+                    MoreSaves.PanelImage,
+                    new Vector2(GetCenter(0, true), GetCenter(0, false)),
+                    Vector2.zero,
+                    new Rect(0, 0, 600, 80),
+                    CanvasUtil.TrajanBold,
+                    InputText_EditSaves,
+                    "Search bar",
+                    36);
+
+                static int GetCenter(int size, bool Horizontal) =>
+                    ((Horizontal ? Screen.width : Screen.height) - size) / 2;
+
+                c.AddMenuButton(
+                    "SearchButton",
+                    new MenuButtonConfig
+                    {
+                        Label = "Search",
+                        SubmitAction = DoSearch,
+                        CancelAction = SaveChanges,
+                        Proceed = false,
+                        Style = MenuButtonStyle.VanillaStyle
+                    });
+
+                foreach (var field in fields)
+                {
+                    //to make sure text doesnt overlap
+                    string Name = field.Name;
+                    if (Name.Length > 26)
+                    {
+                        Name = Name.Remove(25);
+                        Name += "...";
+                        
+                    }
+
+                    if (field.FieldType.ToString() == "System.Boolean")
+                    {
+                        c.AddHorizontalOption(
+                            Name,
+                            new HorizontalOptionConfig
+                            {
+                                Label = Name,
+                                Options = BoolArray,
+                                ApplySetting = (_, i) => { field.SetValue(EditSaveFilePlayerData, i == 0); },
+                                RefreshSetting = (s, _) =>
+                                    s.optionList.SetOptionTo(
+                                        (bool) field.GetValue(EditSaveFilePlayerData) ? 0 : 1
+                                    ),
+                                CancelAction = SaveChanges,
+                                Style = HorizontalOptionStyle.VanillaStyle,
+                            }, out var BoolOption);
+                        BoolOption.menuSetting.RefreshValueFromGameSettings();
+                        AllPDFields.Add(BoolOption.gameObject);
+                    }
+                    else if (field.FieldType.ToString() == "System.Int32")
+                    {
+                        c.AddHorizontalOption(
+                            Name,
+                            new HorizontalOptionConfig
+                            {
+                                Label = Name,
+                                Options = IntArray,
+                                ApplySetting = (_, i) => { field.SetValue(EditSaveFilePlayerData, i - 100); },
+                                RefreshSetting = (s, _) =>
+                                    s.optionList.SetOptionTo(
+                                        (int) field.GetValue(EditSaveFilePlayerData) + 100
+                                    ),
+                                CancelAction = SaveChanges,
+                                Style = HorizontalOptionStyle.VanillaStyle,
+                            }, out var IntOption);
+                        IntOption.menuSetting.RefreshValueFromGameSettings();
+                        AllPDFields.Add(IntOption.gameObject);
+                    }
+                    else if (field.FieldType.ToString() == "System.String")
+                    {
+                        c.AddTextPanel(
+                            Name,
+                            new RelVector2(new RelLength(1000), new RelLength(105f)),
+                            new TextPanelConfig
+                            {
+                                Text = Name,
+                                Font = TextPanelConfig.TextFont.TrajanBold,
+                                Size = 46,
+                                Anchor = TextAnchor.MiddleLeft
+                            }, out var TextPanelOption);
+
+                        var NewInput = new CanvasInput(
+                            TextPanelOption.gameObject,
+                            "IP Input",
+                            MoreSaves.PanelImage,
+                            new Vector2(Screen.width - TextPanelOption.gameObject.transform.position.x - 500,
+                                Screen.height / 2f),
+                            Vector2.zero,
+                            new Rect(0, 0, 500, 60),
+                            CanvasUtil.TrajanBold,
+                            InputText,
+                            (string) field.GetValue(EditSaveFilePlayerData),
+                            36);
+                        AllPDFields.Add(TextPanelOption.gameObject);
+                        AllInputs.Add(new InputFieldInfo(field, NewInput, typeof(string)));
+                    }
+                    else if (field.FieldType.ToString() == "System.Single")
+                    {
+                        c.AddTextPanel(
+                            Name,
+                            new RelVector2(new RelLength(1000), new RelLength(105f)),
+                            new TextPanelConfig
+                            {
+                                Text = Name,
+                                Font = TextPanelConfig.TextFont.TrajanBold,
+                                Size = 46,
+                                Anchor = TextAnchor.MiddleLeft
+                            }, out var TextPanelOption);
+
+                        var NewInput = new CanvasInput(
+                            TextPanelOption.gameObject,
+                            "IP Input",
+                            MoreSaves.PanelImage,
+                            new Vector2(Screen.width - TextPanelOption.gameObject.transform.position.x - 500,
+                                Screen.height / 2f),
+                            Vector2.zero,
+                            new Rect(0, 0, 500, 60),
+                            CanvasUtil.TrajanBold,
+                            InputText,
+                            ((float) field.GetValue(EditSaveFilePlayerData)).ToString(),
+                            36);
+                        AllPDFields.Add(TextPanelOption.gameObject);
+                        AllInputs.Add(new InputFieldInfo(field, NewInput, typeof(float)));
+                    }
+                    else if (field.FieldType.ToString() == "UnityEngine.Vector3")
+                    {
+                        c.AddTextPanel(
+                            Name,
+                            new RelVector2(new RelLength(1000), new RelLength(105f)),
+                            new TextPanelConfig
+                            {
+                                Text = Name,
+                                Font = TextPanelConfig.TextFont.TrajanBold,
+                                Size = 46,
+                                Anchor = TextAnchor.MiddleLeft
+                            }, out var TextPanelOption);
+
+                        var NewInput = new CanvasInput(
+                            TextPanelOption.gameObject,
+                            "IP Input",
+                            MoreSaves.PanelImage,
+                            new Vector2(Screen.width - TextPanelOption.gameObject.transform.position.x - 500,
+                                Screen.height / 2f),
+                            Vector2.zero,
+                            new Rect(0, 0, 500, 60),
+                            CanvasUtil.TrajanBold,
+                            InputText,
+                            ((Vector3) field.GetValue(EditSaveFilePlayerData)).ToString(),
+                            36);
+                        AllPDFields.Add(TextPanelOption.gameObject);
+                        AllInputs.Add(new InputFieldInfo(field, NewInput, typeof(Vector3)));
+                    }
+                    else if (field.FieldType.ToString().Contains("List")) //string/int/vector3
+                    {
+                        c.AddTextPanel(
+                            Name,
+                            new RelVector2(new RelLength(1000), new RelLength(105f)),
+                            new TextPanelConfig
+                            {
+                                Text = Name + " (Cannot Edit List)",
+                                Font = TextPanelConfig.TextFont.TrajanBold,
+                                Size = 46,
+                                Anchor = TextAnchor.MiddleLeft,
+                            },out var ListObj);
+                        AllPDFields.Add(ListObj.gameObject);
+                    }
+                }
+            }
+
+        private static void SaveChanges(MenuSelectable obj)
+        {
+            UIManager.instance.UIGoToDynamicMenu(EditChooseMenu);
+
+            foreach (var inputFieldInfo in AllInputs.Where(inputFieldInfo => inputFieldInfo.Input.GetText().Trim(' ') != ""))
+            {
+                if (inputFieldInfo.InputType == typeof(string))
+                {
+                    inputFieldInfo.Field.SetValue(EditSaveFilePlayerData, inputFieldInfo.Input.GetText());
+                }
+                else if (inputFieldInfo.InputType == typeof(float))
+                {
+                    if (float.TryParse(inputFieldInfo.Input.GetText(), out float newValue))
+                    {
+                        inputFieldInfo.Field.SetValue(EditSaveFilePlayerData, newValue);
+                    }
+                }
+                else if (inputFieldInfo.InputType == typeof(Vector3))
+                {
+                    Vector3? newValue = StringToVector3(inputFieldInfo.Input.GetText());
+                    if (newValue != null)
+                    {
+                        inputFieldInfo.Field.SetValue(EditSaveFilePlayerData, (Vector3) newValue);
+                    }
+                }
+            }
+            AllInputs.Clear();
+
+            WriteToSaveFile(EditSaveFileNumber, new SaveFileData(EditSaveFilePlayerData, EditSaveFileSceneData));
+        }
+
+
+        private static void DoSearch(MenuSelectable obj)
+        {
+            //no pd feild name has space in it
+            var searchText = SearchInput.GetText().ToLower().Trim(' ');
+
+            foreach (GameObject pdField in AllPDFields)
+            {
+                pdField.SetActive(pdField.name.ToLower().Contains(searchText) || searchText == "");
+            }
+
+            //0 => search bar, 1=> search button hence start from 2
+            int Index = 2;
+            RelVector2 ItemAdvance = new RelVector2(new Vector2(0.0f, -105f));
+            AnchoredPosition Start = new AnchoredPosition
+            {
+                ChildAnchor = new Vector2(0.5f, 1f),
+                ParentAnchor = new Vector2(0.5f, 1f),
+                Offset = default
+            };
+
+            foreach (GameObject pdField in AllPDFields.Where(x => x.activeInHierarchy))
+            {
+                (Start + ItemAdvance * new Vector2Int(Index, Index)).Reposition(pdField.gameObject
+                    .GetComponent<RectTransform>());
+                Index += 1;
+            }
+
+        }
+
+        private static SaveFileData ReadFromSaveFile(int saveslot)
+        {
+            byte[] fileBytes = File.ReadAllBytes(Application.persistentDataPath + $"/user{saveslot}.dat");
+
+            string json =
+                (!GameManager.instance.gameConfig.useSaveEncryption
+                    ? 0
+                    : (!Platform.Current.IsFileSystemProtected ? 1 : 0)) == 0
+                    ? Encoding.UTF8.GetString(fileBytes)
+                    : Encryption.Decrypt(
+                        (string) new BinaryFormatter().Deserialize(new MemoryStream(fileBytes)));
+
+            SaveGameData data;
+            try
+            {
+                data = JsonConvert.DeserializeObject<SaveGameData>(json, new JsonSerializerSettings()
+                {
+                    ContractResolver = ShouldSerializeContractResolver.Instance,
+                    TypeNameHandling = TypeNameHandling.Auto,
+                    ObjectCreationHandling = ObjectCreationHandling.Replace,
+                    Converters = JsonConverterTypes.ConverterTypes
+                });
+            }
+            catch (Exception ex)
+            {
+                MoreSaves.Instance.LogError(
+                    "Failed to read save using Json.NET (GameManager::LoadGame), falling back.");
+                MoreSaves.Instance.LogError(ex);
+                data = JsonUtility.FromJson<SaveGameData>(json);
+            }
+
+
+            if (data == null)
+            {
+                return new SaveFileData(null, null);
+            }
+
+            var playerData = data.playerData;
+            var sceneData = data.sceneData;
+
+            return new SaveFileData(playerData, sceneData);
+        }
+
+        private static void WriteToSaveFile(int saveSlot, SaveFileData saveFileData)
+        {
+            var GM = GameManager.instance;
+            PlayerData playerData = saveFileData.PlayerData;
+            SceneData sceneData = saveFileData.SceneData;
+
+            try
+            {
+                SaveGameData data = new SaveGameData(playerData, sceneData);
+
+                string str3;
+                try
+                {
+                    str3 = JsonConvert.SerializeObject(data, Formatting.Indented,
+                        new JsonSerializerSettings
+                        {
+                            ContractResolver = ShouldSerializeContractResolver.Instance,
+                            TypeNameHandling = TypeNameHandling.Auto,
+                            Converters = JsonConverterTypes.ConverterTypes
+                        });
+                }
+                catch (Exception ex)
+                {
+                    Modding.Logger.LogError("Failed to serialize save using Json.NET, trying fallback.");
+                    Modding.Logger.LogError(ex);
+                    str3 = JsonUtility.ToJson(data);
+                }
+
+                if ((!GM.gameConfig.useSaveEncryption
+                    ? 0
+                    : (!Platform.Current.IsFileSystemProtected ? 1 : 0)) != 0)
+                {
+                    string str1 = Encryption.Encrypt(str3);
+                    BinaryFormatter binaryFormatter = new BinaryFormatter();
+                    MemoryStream memoryStream1 = new MemoryStream();
+                    MemoryStream memoryStream2 = memoryStream1;
+                    string str2 = str1;
+                    binaryFormatter.Serialize(memoryStream2, str2);
+                    byte[] array = memoryStream1.ToArray();
+                    memoryStream1.Close();
+                    File.WriteAllBytes(Application.persistentDataPath + $"/user{saveSlot}.dat", array);
+                }
+                else
+                {
+                    File.WriteAllBytes(Application.persistentDataPath + $"/user{saveSlot}.dat",
+                        Encoding.UTF8.GetBytes(str3));
+                }
+            }
+            catch (Exception ex)
+            {
+                MoreSaves.Instance.LogError(("There was an error saving the game: " + ex));
+            }
+        }
+
+        private static Vector3? StringToVector3(string sVector)
+        {
+            if (string.IsNullOrEmpty(sVector)) return null;
+            try
+            {
+                // Remove the parentheses
+                if (sVector.StartsWith("(") && sVector.EndsWith(")"))
+                {
+                    sVector = sVector.Substring(1, sVector.Length - 2);
+                }
+                
+                // split the items
+                string[] sArray = sVector.Split(',');
+
+                // store as a Vector3
+                Vector3 result = new Vector3(
+                    float.Parse(sArray[0]),
+                    float.Parse(sArray[1]),
+                    float.Parse(sArray[2]));
+
+                return result;
+            }
+            catch (Exception e)
+            {
+                MoreSaves.Instance.Log(e);
+                return null;
+            }
+        }
+
+        #endregion
+        
+        private struct SaveFileData
+        {
+            public PlayerData PlayerData;
+            public SceneData SceneData;
+
+            public SaveFileData(PlayerData playerData,SceneData sceneData)
+            {
+                PlayerData = playerData;
+                SceneData = sceneData;
+            }
+        }
+        private struct InputFieldInfo
+        {
+            public FieldInfo Field;
+            public CanvasInput Input;
+            public Type InputType;
+
+            public InputFieldInfo(FieldInfo field,CanvasInput input, Type inputType)
+            {
+                this.Field = field;
+                this.Input = input;
+                this.InputType = inputType;
+            }
+        }
     }
 }
