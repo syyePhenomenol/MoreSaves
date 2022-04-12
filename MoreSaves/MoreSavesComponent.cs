@@ -60,19 +60,20 @@ namespace MoreSaves
         private void UnLoadHooks()
         {
             UnityEngine.SceneManagement.SceneManager.activeSceneChanged -= SceneChanged;
-            ModHooks.GetSaveFileNameHook -= GetFilename;
             ModHooks.SavegameSaveHook -= CheckAddMaxPages;
             ModHooks.SavegameClearHook -= CheckRemoveMaxPages;
             ModHooks.ApplicationQuitHook -= ClosingGameStuff;
             On.UnityEngine.UI.SaveSlotButton.PresentSaveSlot -= ChangeSaveFileText;
             On.UnityEngine.UI.SaveSlotButton.AnimateToSlotState -= FixNewSavesNumber;
             On.MappableKey.OnBindingFound -= IHateMouse1;
+            On.UnityEngine.UI.SaveSlotButton.OnSubmit -= SaveSlotButton_OnSubmit;
+            On.Platform.GetSaveSlotFileName -= Platform_GetSaveSlotFileName;
+            On.GameManager.LoadGame -= GameManager_LoadGame;
         }
 
         private void LoadHooks()
         {
             UnityEngine.SceneManagement.SceneManager.activeSceneChanged += SceneChanged;
-            ModHooks.GetSaveFileNameHook += GetFilename;
             ModHooks.SavegameSaveHook += CheckAddMaxPages;
             ModHooks.SavegameClearHook += CheckRemoveMaxPages;
             ModHooks.ApplicationQuitHook += ClosingGameStuff;
@@ -81,6 +82,11 @@ namespace MoreSaves
             On.UnityEngine.UI.SaveSlotButton.PresentSaveSlot += ChangeSaveFileText;
             On.UnityEngine.UI.SaveSlotButton.AnimateToSlotState += FixNewSavesNumber;
             On.MappableKey.OnBindingFound += IHateMouse1;
+
+            // The following fixes save/load behavior for mod settings
+            On.UnityEngine.UI.SaveSlotButton.OnSubmit += SaveSlotButton_OnSubmit;
+            On.Platform.GetSaveSlotFileName += Platform_GetSaveSlotFileName;
+            On.GameManager.LoadGame += GameManager_LoadGame;
         }
 
 
@@ -107,8 +113,8 @@ namespace MoreSaves
             //change name and number
             self.locationText.text = GetSaveFileText(self,saveStats);
         }
-
         
+
         private IEnumerator FixNewSavesNumber(On.UnityEngine.UI.SaveSlotButton.orig_AnimateToSlotState orig, SaveSlotButton self, SaveSlotButton.SlotState nextstate)
         {
             //only fix for new save slots or else do normal stuff
@@ -288,13 +294,6 @@ namespace MoreSaves
             MoreSaves.PageLabel.text = $"Page {_currentPage + 1}/{_maxPages}";
         }
 
-        private string GetFilename(int x)
-        {
-            x = x % 4 == 0 ? 4 : x % 4;
-
-            return "user" + (_currentPage * 4 + x) + ".dat";
-        }
-
         private void ClosingGameStuff()
         {
             if (!MoreSaves.settings.AutoBackup) return;
@@ -302,6 +301,45 @@ namespace MoreSaves
             ModMenu.BackupSaves();
 
             ModMenu.SaveNameToFile();
+        }
+
+        // Patch profileID when a save slot button is clicked. Need it here for mods like Randomizer to save properly
+        private void SaveSlotButton_OnSubmit(On.UnityEngine.UI.SaveSlotButton.orig_OnSubmit orig, SaveSlotButton self, UnityEngine.EventSystems.BaseEventData eventData)
+        {
+            orig(self, eventData);
+
+            GameManager.instance.profileID = GetNewSaveSlot(GameManager.instance.profileID);
+        }
+
+        // This may not be necessary, but I will leave it here just in case
+        private string Platform_GetSaveSlotFileName(On.Platform.orig_GetSaveSlotFileName orig, Platform self, int slotIndex, int usage)
+        {
+            //MoreSaves.Instance.Log("Platform_GetSaveSlotFileName: " + slotIndex);
+
+            slotIndex = GetNewSaveSlot(slotIndex);
+
+            //MoreSaves.Instance.Log("Platform_GetSaveSlotFileName after: " + slotIndex);
+
+            return orig(self, slotIndex, usage);
+        }
+
+        // Patch profileID before loading a save
+        private void GameManager_LoadGame(On.GameManager.orig_LoadGame orig, GameManager self, int saveSlot, Action<bool> callback)
+        {
+            //MoreSaves.Instance.Log("GameManager_LoadGame: " + saveSlot);
+
+            saveSlot = GetNewSaveSlot(saveSlot);
+
+            //MoreSaves.Instance.Log("GameManager_LoadGame after: " + saveSlot);
+
+            orig(self, saveSlot, callback);
+        }
+
+        private int GetNewSaveSlot(int x)
+        {
+            x = x % 4 == 0 ? 4 : x % 4;
+
+            return _currentPage * 4 + x;
         }
     }
 }
