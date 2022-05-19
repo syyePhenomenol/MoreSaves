@@ -15,6 +15,7 @@ using Modding.Patches;
 using Newtonsoft.Json;
 using UnityEngine;
 using UnityEngine.UI;
+using Logger = Modding.Logger;
 
 // ReSharper disable StringLiteralTypo
 // ReSharper disable CommentTypo
@@ -272,7 +273,8 @@ namespace MoreSaves
                         {
                             Text = "Click to open saves folder"
                         }
-                    })                .AddMenuButton(
+                    })               
+                .AddMenuButton(
                     "Make New Page",
                     new MenuButtonConfig
                     {
@@ -555,7 +557,7 @@ namespace MoreSaves
         {
             BackupSaves();
 
-            //i need to delete and remake it to make sure the new save files that are backed up show up in the menu
+            //i need to delete and remake it to make sure the new save files that are backed up show up in the menu. its easier to do this than to add buttons
             UnityEngine.Object.Destroy(RestoreSavesMenu);
             RestoreSavesMenu = CreateRestoreSavesMenu(MainMenu);
         }
@@ -599,9 +601,9 @@ namespace MoreSaves
                             Label = $"Edit  Save {filenumber}",
                             SubmitAction = _ =>
                             {
-                                UnityEngine.Object.Destroy(EditSavesMenu);
-                                AllPDFields.Clear();
-                                EditSavesMenu = CreateEditSavesMenu(EditChooseMenu, filenumber);
+                                //UnityEngine.Object.Destroy(EditSavesMenu);
+                                //AllPDFields.Clear();
+                                CreateEditSavesMenu(EditChooseMenu, filenumber);
                                 UIManager.instance.UIGoToDynamicMenu(EditSavesMenu);
                             },
                             Style = MenuButtonStyle.VanillaStyle,
@@ -632,222 +634,251 @@ namespace MoreSaves
                 )).Build();
         }
 
-        private static MenuScreen CreateEditSavesMenu(MenuScreen editChooseMenu, string filenumber)
+        private static void CreateEditSavesMenu(MenuScreen editChooseMenu, string filenumber)
         {
             EditSaveFileNumber = Int32.Parse(filenumber);
             var SaveData = ReadFromSaveFile(EditSaveFileNumber);
             EditSaveFilePlayerData = SaveData.PlayerData;
             EditSaveFileSceneData = SaveData.SceneData;
 
-            return CreateMenuBuilder("Edit Saves")
-                .AddControlButton("Back", new Vector2(0f, -64f), SaveChanges, SaveChanges)
-                .AddContent(new NullContentLayout(), c => c.AddScrollPaneContent(
-                    new ScrollbarConfig
-                    {
-                        CancelAction = _ => UIManager.instance.UIGoToDynamicMenu(editChooseMenu),
-                        Navigation = new Navigation
-                        {
-                            mode = Navigation.Mode.Explicit,
-                        },
-                        Position = new AnchoredPosition
-                        {
-                            ChildAnchor = new Vector2(0f, 1f),
-                            ParentAnchor = new Vector2(1f, 1f),
-                            Offset = new Vector2(-310f, 0f)
-                        }
-                    },
-                    new RelLength(105 * EditSaveFilePlayerData.GetType().GetFields().ToArray().Length),
-                    RegularGridLayout.CreateVerticalLayout(105f),
-                    AddSaveFileContent
-                )).Build();
-        }
-        
-        private static void AddSaveFileContent(ContentArea c)
+            if (EditSavesMenu != null)
             {
-                var fields = EditSaveFilePlayerData.GetType().GetFields();
-
-                string[] BoolArray = {"True", "False"};
-                string[] IntArray = Enumerable.Range(-100, 99999).Select(x => x.ToString()).ToArray();
-
-                c.AddStaticPanel("TextPanel",
-                    new RelVector2(new Vector2(200, 105)),
-                    out var TextPanel);
-
-                SearchInput = new CanvasInput(
-                    TextPanel,
-                    "TextPanel",
-                    MoreSaves.PanelImage,
-                    new Vector2(GetCenter(0, true), GetCenter(0, false)),
-                    Vector2.zero,
-                    new Rect(0, 0, 600, 80),
-                    CanvasUtil.TrajanBold,
-                    InputText_EditSaves,
-                    "Search bar",
-                    36);
-
-                static int GetCenter(int size, bool Horizontal) =>
-                    ((Horizontal ? Screen.width : Screen.height) - size) / 2;
-
-                c.AddMenuButton(
-                    "SearchButton",
-                    new MenuButtonConfig
-                    {
-                        Label = "Search",
-                        SubmitAction = DoSearch,
-                        CancelAction = SaveChanges,
-                        Proceed = false,
-                        Style = MenuButtonStyle.VanillaStyle
-                    });
-
-                foreach (var field in fields)
+                var contentgo = EditSavesMenu.transform.GetChild(2).GetChild(0).GetChild(0); //get the gameobject of the parent of all content gos
+                foreach (MenuOptionHorizontal option in contentgo.GetComponentsInChildren<MenuOptionHorizontal>())
                 {
-                    //to make sure text doesnt overlap
-                    string Name = field.Name;
-                    if (Name.Length > 26)
-                    {
-                        Name = Name.Remove(25);
-                        Name += "...";
-                        
-                    }
+                    option.menuSetting.RefreshValueFromGameSettings();
+                }
 
-                    if (field.FieldType.ToString() == "System.Boolean")
+                foreach (Text InputPanel in contentgo.GetComponentsInChildren<Text>())
+                {
+                    if (!InputPanel.gameObject.name.StartsWith("$")) continue;
+                    var placeholder = InputPanel.gameObject.transform.GetChild(0).GetChild(1);//the placeholder text;
+                    
+                    string name = InputPanel.gameObject.name.Substring(1); //remove first letter
+                    FieldInfo field = PDFields.First(f => f.Name == name);
+                    
+                    Text placeHolderText = placeholder.GetComponent<Text>();
+                    if (field.FieldType.ToString() == "System.String")
                     {
-                        c.AddHorizontalOption(
-                            Name,
-                            new HorizontalOptionConfig
-                            {
-                                Label = Name,
-                                Options = BoolArray,
-                                ApplySetting = (_, i) => { field.SetValue(EditSaveFilePlayerData, i == 0); },
-                                RefreshSetting = (s, _) =>
-                                    s.optionList.SetOptionTo(
-                                        (bool) field.GetValue(EditSaveFilePlayerData) ? 0 : 1
-                                    ),
-                                CancelAction = SaveChanges,
-                                Style = HorizontalOptionStyle.VanillaStyle,
-                            }, out var BoolOption);
-                        BoolOption.menuSetting.RefreshValueFromGameSettings();
-                        AllPDFields.Add(BoolOption.gameObject);
-                    }
-                    else if (field.FieldType.ToString() == "System.Int32")
-                    {
-                        c.AddHorizontalOption(
-                            Name,
-                            new HorizontalOptionConfig
-                            {
-                                Label = Name,
-                                Options = IntArray,
-                                ApplySetting = (_, i) => { field.SetValue(EditSaveFilePlayerData, i - 100); },
-                                RefreshSetting = (s, _) =>
-                                    s.optionList.SetOptionTo(
-                                        (int) field.GetValue(EditSaveFilePlayerData) + 100
-                                    ),
-                                CancelAction = SaveChanges,
-                                Style = HorizontalOptionStyle.VanillaStyle,
-                            }, out var IntOption);
-                        IntOption.menuSetting.RefreshValueFromGameSettings();
-                        AllPDFields.Add(IntOption.gameObject);
-                    }
-                    else if (field.FieldType.ToString() == "System.String")
-                    {
-                        c.AddTextPanel(
-                            Name,
-                            new RelVector2(new RelLength(1000), new RelLength(105f)),
-                            new TextPanelConfig
-                            {
-                                Text = Name,
-                                Font = TextPanelConfig.TextFont.TrajanBold,
-                                Size = 46,
-                                Anchor = TextAnchor.MiddleLeft
-                            }, out var TextPanelOption);
-
-                        var NewInput = new CanvasInput(
-                            TextPanelOption.gameObject,
-                            "IP Input",
-                            MoreSaves.PanelImage,
-                            new Vector2(Screen.width - TextPanelOption.gameObject.transform.position.x - 500,
-                                Screen.height / 2f),
-                            Vector2.zero,
-                            new Rect(0, 0, 500, 60),
-                            CanvasUtil.TrajanBold,
-                            InputText,
-                            (string) field.GetValue(EditSaveFilePlayerData),
-                            36);
-                        AllPDFields.Add(TextPanelOption.gameObject);
-                        AllInputs.Add(new InputFieldInfo(field, NewInput, typeof(string)));
+                        placeHolderText.text = (string)field.GetValue(EditSaveFilePlayerData);
                     }
                     else if (field.FieldType.ToString() == "System.Single")
                     {
-                        c.AddTextPanel(
-                            Name,
-                            new RelVector2(new RelLength(1000), new RelLength(105f)),
-                            new TextPanelConfig
-                            {
-                                Text = Name,
-                                Font = TextPanelConfig.TextFont.TrajanBold,
-                                Size = 46,
-                                Anchor = TextAnchor.MiddleLeft
-                            }, out var TextPanelOption);
-
-                        var NewInput = new CanvasInput(
-                            TextPanelOption.gameObject,
-                            "IP Input",
-                            MoreSaves.PanelImage,
-                            new Vector2(Screen.width - TextPanelOption.gameObject.transform.position.x - 500,
-                                Screen.height / 2f),
-                            Vector2.zero,
-                            new Rect(0, 0, 500, 60),
-                            CanvasUtil.TrajanBold,
-                            InputText,
-                            ((float) field.GetValue(EditSaveFilePlayerData)).ToString(),
-                            36);
-                        AllPDFields.Add(TextPanelOption.gameObject);
-                        AllInputs.Add(new InputFieldInfo(field, NewInput, typeof(float)));
+                        placeHolderText.text = ((float)field.GetValue(EditSaveFilePlayerData)).ToString();
                     }
                     else if (field.FieldType.ToString() == "UnityEngine.Vector3")
                     {
-                        c.AddTextPanel(
-                            Name,
-                            new RelVector2(new RelLength(1000), new RelLength(105f)),
-                            new TextPanelConfig
-                            {
-                                Text = Name,
-                                Font = TextPanelConfig.TextFont.TrajanBold,
-                                Size = 46,
-                                Anchor = TextAnchor.MiddleLeft
-                            }, out var TextPanelOption);
-
-                        var NewInput = new CanvasInput(
-                            TextPanelOption.gameObject,
-                            "IP Input",
-                            MoreSaves.PanelImage,
-                            new Vector2(Screen.width - TextPanelOption.gameObject.transform.position.x - 500,
-                                Screen.height / 2f),
-                            Vector2.zero,
-                            new Rect(0, 0, 500, 60),
-                            CanvasUtil.TrajanBold,
-                            InputText,
-                            ((Vector3) field.GetValue(EditSaveFilePlayerData)).ToString(),
-                            36);
-                        AllPDFields.Add(TextPanelOption.gameObject);
-                        AllInputs.Add(new InputFieldInfo(field, NewInput, typeof(Vector3)));
-                    }
-                    else if (field.FieldType.ToString().Contains("List")) //string/int/vector3
-                    {
-                        c.AddTextPanel(
-                            Name,
-                            new RelVector2(new RelLength(1000), new RelLength(105f)),
-                            new TextPanelConfig
-                            {
-                                Text = Name + " (Cannot Edit List)",
-                                Font = TextPanelConfig.TextFont.TrajanBold,
-                                Size = 46,
-                                Anchor = TextAnchor.MiddleLeft,
-                            },out var ListObj);
-                        AllPDFields.Add(ListObj.gameObject);
+                        placeHolderText.text = ((Vector3)field.GetValue(EditSaveFilePlayerData)).ToString();
                     }
                 }
             }
+            else
+            {
+                EditSavesMenu = CreateMenuBuilder("Edit Saves")
+                    .AddControlButton("Back", new Vector2(0f, -64f), SaveChanges, SaveChanges)
+                    .AddContent(new NullContentLayout(), c => c.AddScrollPaneContent(
+                        new ScrollbarConfig
+                        {
+                            CancelAction = _ => UIManager.instance.UIGoToDynamicMenu(editChooseMenu),
+                            Navigation = new Navigation
+                            {
+                                mode = Navigation.Mode.Explicit,
+                            },
+                            Position = new AnchoredPosition
+                            {
+                                ChildAnchor = new Vector2(0f, 1f),
+                                ParentAnchor = new Vector2(1f, 1f),
+                                Offset = new Vector2(-310f, 0f)
+                            }
+                        },
+                        new RelLength(105 * EditSaveFilePlayerData.GetType().GetFields().ToArray().Length),
+                        RegularGridLayout.CreateVerticalLayout(105f),
+                        AddSaveFileContent
+                    )).Build();
+            }
+        }
+        
+        private static FieldInfo[] PDFields = typeof(PlayerData).GetFields();
+
+        private static void AddSaveFileContent(ContentArea c)
+        {
+            string[] BoolArray = { "True", "False" };
+            string[] IntArray = Enumerable.Range(-100, 99999).Select(x => x.ToString()).ToArray();
+
+            c.AddStaticPanel("TextPanel",
+                new RelVector2(new Vector2(200, 105)),
+                out var TextPanel);
+
+            SearchInput = new CanvasInput(
+                TextPanel,
+                "TextPanel",
+                MoreSaves.PanelImage,
+                new Vector2(GetCenter(0, true), GetCenter(0, false)),
+                Vector2.zero,
+                new Rect(0, 0, 600, 80),
+                CanvasUtil.TrajanBold,
+                InputText_EditSaves,
+                "Search bar",
+                36);
+
+            static int GetCenter(int size, bool Horizontal) =>
+                ((Horizontal ? Screen.width : Screen.height) - size) / 2;
+
+            c.AddMenuButton(
+                "SearchButton",
+                new MenuButtonConfig
+                {
+                    Label = "Search",
+                    SubmitAction = DoSearch,
+                    CancelAction = SaveChanges,
+                    Proceed = false,
+                    Style = MenuButtonStyle.VanillaStyle
+                });
+
+            foreach (var field in PDFields)
+            {
+                //to make sure text doesnt overlap
+                string Name = field.Name;
+                if (Name.Length > 26)
+                {
+                    Name = Name.Remove(25);
+                    Name += "...";
+
+                }
+
+                if (field.FieldType.ToString() == "System.Boolean")
+                {
+                    c.AddHorizontalOption(field.Name,
+                        new HorizontalOptionConfig
+                        {
+                            Label = Name,
+                            Options = BoolArray,
+                            ApplySetting = (_, i) => { field.SetValue(EditSaveFilePlayerData, i == 0); },
+                            RefreshSetting = (s, _) =>
+                                s.optionList.SetOptionTo(
+                                    (bool)field.GetValue(EditSaveFilePlayerData) ? 0 : 1
+                                ),
+                            CancelAction = SaveChanges,
+                            Style = HorizontalOptionStyle.VanillaStyle,
+                        }, out var BoolOption);
+                    BoolOption.menuSetting.RefreshValueFromGameSettings();
+                    AllPDFields.Add(BoolOption.gameObject);
+                }
+                else if (field.FieldType.ToString() == "System.Int32")
+                {
+                    c.AddHorizontalOption(field.Name,
+                        new HorizontalOptionConfig
+                        {
+                            Label = Name,
+                            Options = IntArray,
+                            ApplySetting = (_, i) => { field.SetValue(EditSaveFilePlayerData, i - 100); },
+                            RefreshSetting = (s, _) =>
+                                s.optionList.SetOptionTo(
+                                    (int)field.GetValue(EditSaveFilePlayerData) + 100
+                                ),
+                            CancelAction = SaveChanges,
+                            Style = HorizontalOptionStyle.VanillaStyle,
+                        }, out var IntOption);
+                    IntOption.menuSetting.RefreshValueFromGameSettings();
+                    AllPDFields.Add(IntOption.gameObject);
+                }
+                else if (field.FieldType.ToString() == "System.String")
+                {
+                    c.AddTextPanel(
+                        $"${field.Name}",
+                        new RelVector2(new RelLength(1000), new RelLength(105f)),
+                        new TextPanelConfig
+                        {
+                            Text = Name,
+                            Font = TextPanelConfig.TextFont.TrajanBold,
+                            Size = 46,
+                            Anchor = TextAnchor.MiddleLeft
+                        }, out var TextPanelOption);
+
+                    var NewInput = new CanvasInput(
+                        TextPanelOption.gameObject,
+                        "IP Input",
+                        MoreSaves.PanelImage,
+                        new Vector2(Screen.width - TextPanelOption.gameObject.transform.position.x - 500,
+                            Screen.height / 2f),
+                        Vector2.zero,
+                        new Rect(0, 0, 500, 60),
+                        CanvasUtil.TrajanBold,
+                        InputText,
+                        (string)field.GetValue(EditSaveFilePlayerData),
+                        36);
+                    AllPDFields.Add(TextPanelOption.gameObject);
+                    AllInputs.Add(new InputFieldInfo(field, NewInput, typeof(string)));
+                }
+                else if (field.FieldType.ToString() == "System.Single")
+                {
+                    c.AddTextPanel($"${field.Name}",
+                        new RelVector2(new RelLength(1000), new RelLength(105f)),
+                        new TextPanelConfig
+                        {
+                            Text = Name,
+                            Font = TextPanelConfig.TextFont.TrajanBold,
+                            Size = 46,
+                            Anchor = TextAnchor.MiddleLeft
+                        }, out var TextPanelOption);
+
+                    var NewInput = new CanvasInput(
+                        TextPanelOption.gameObject,
+                        "IP Input",
+                        MoreSaves.PanelImage,
+                        new Vector2(Screen.width - TextPanelOption.gameObject.transform.position.x - 500,
+                            Screen.height / 2f),
+                        Vector2.zero,
+                        new Rect(0, 0, 500, 60),
+                        CanvasUtil.TrajanBold,
+                        InputText,
+                        ((float)field.GetValue(EditSaveFilePlayerData)).ToString(),
+                        36);
+                    AllPDFields.Add(TextPanelOption.gameObject);
+                    AllInputs.Add(new InputFieldInfo(field, NewInput, typeof(float)));
+                }
+                else if (field.FieldType.ToString() == "UnityEngine.Vector3")
+                {
+                    c.AddTextPanel($"${field.Name}",
+                        new RelVector2(new RelLength(1000), new RelLength(105f)),
+                        new TextPanelConfig
+                        {
+                            Text = Name,
+                            Font = TextPanelConfig.TextFont.TrajanBold,
+                            Size = 46,
+                            Anchor = TextAnchor.MiddleLeft
+                        }, out var TextPanelOption);
+
+                    var NewInput = new CanvasInput(
+                        TextPanelOption.gameObject,
+                        "IP Input",
+                        MoreSaves.PanelImage,
+                        new Vector2(Screen.width - TextPanelOption.gameObject.transform.position.x - 500,
+                            Screen.height / 2f),
+                        Vector2.zero,
+                        new Rect(0, 0, 500, 60),
+                        CanvasUtil.TrajanBold,
+                        InputText,
+                        ((Vector3)field.GetValue(EditSaveFilePlayerData)).ToString(),
+                        36);
+                    AllPDFields.Add(TextPanelOption.gameObject);
+                    AllInputs.Add(new InputFieldInfo(field, NewInput, typeof(Vector3)));
+                }
+                else if (field.FieldType.ToString().Contains("List")) //string/int/vector3
+                {
+                    c.AddTextPanel(field.Name,
+                        new RelVector2(new RelLength(1000), new RelLength(105f)),
+                        new TextPanelConfig
+                        {
+                            Text = Name + " (Cannot Edit List)",
+                            Font = TextPanelConfig.TextFont.TrajanBold,
+                            Size = 46,
+                            Anchor = TextAnchor.MiddleLeft,
+                        }, out var ListObj);
+                    AllPDFields.Add(ListObj.gameObject);
+                }
+            }
+        }
 
         private static void SaveChanges(MenuSelectable obj)
         {
