@@ -31,6 +31,8 @@ namespace MoreSaves
         private float _firstInput;
         private int _queueRight;
         private int _queueLeft;
+        private SaveSlotButton _selectedSaveSlot;
+        private bool CanLockSave = true;
 
         private static IEnumerable<SaveSlotButton> Slots => new[]
         {
@@ -62,13 +64,17 @@ namespace MoreSaves
             UnityEngine.SceneManagement.SceneManager.activeSceneChanged -= SceneChanged;
             ModHooks.SavegameSaveHook -= CheckAddMaxPages;
             ModHooks.SavegameClearHook -= CheckRemoveMaxPages;
-            ModHooks.ApplicationQuitHook -= ClosingGameStuff;
+            ModHooks.ApplicationQuitHook -= SaveFileNames;
             On.UnityEngine.UI.SaveSlotButton.PresentSaveSlot -= ChangeSaveFileText;
             On.UnityEngine.UI.SaveSlotButton.AnimateToSlotState -= FixNewSavesNumber;
             On.MappableKey.OnBindingFound -= IHateMouse1;
             On.UnityEngine.UI.SaveSlotButton.OnSubmit -= SaveSlotButton_OnSubmit;
             On.Platform.GetSaveSlotFileName -= Platform_GetSaveSlotFileName;
             On.GameManager.LoadGame -= GameManager_LoadGame;
+            
+            On.UnityEngine.UI.SaveSlotButton.OnSelect -= SaveSlotButton_OnSelect;
+            On.UnityEngine.UI.SaveSlotButton.OnDeselect -= SaveSlotButton_OnDeselect;
+            On.UnityEngine.UI.SaveSlotButton.AnimateToSlotState -= SaveSlotButton_AnimateToSlotState;
         }
 
         private void LoadHooks()
@@ -76,7 +82,7 @@ namespace MoreSaves
             UnityEngine.SceneManagement.SceneManager.activeSceneChanged += SceneChanged;
             ModHooks.SavegameSaveHook += CheckAddMaxPages;
             ModHooks.SavegameClearHook += CheckRemoveMaxPages;
-            ModHooks.ApplicationQuitHook += ClosingGameStuff;
+            ModHooks.ApplicationQuitHook += SaveFileNames;
             
             //reconstruct some functions to facilitate changing saves name and number
             On.UnityEngine.UI.SaveSlotButton.PresentSaveSlot += ChangeSaveFileText;
@@ -87,6 +93,10 @@ namespace MoreSaves
             On.UnityEngine.UI.SaveSlotButton.OnSubmit += SaveSlotButton_OnSubmit;
             On.Platform.GetSaveSlotFileName += Platform_GetSaveSlotFileName;
             On.GameManager.LoadGame += GameManager_LoadGame;
+
+            On.UnityEngine.UI.SaveSlotButton.AnimateToSlotState += SaveSlotButton_AnimateToSlotState;
+            On.UnityEngine.UI.SaveSlotButton.OnDeselect += SaveSlotButton_OnDeselect;
+            On.UnityEngine.UI.SaveSlotButton.OnSelect += SaveSlotButton_OnSelect;
         }
 
 
@@ -171,7 +181,7 @@ namespace MoreSaves
         public void Update()
         {
             if (scene != Constants.MENU_SCENE) return;
-            float t = Time.realtimeSinceStartup;
+            float currentTime = Time.realtimeSinceStartup;
             
             if (_uim.menuState != MainMenuState.SAVE_PROFILES)
             {
@@ -182,37 +192,64 @@ namespace MoreSaves
             bool updateSaves = false;
             bool holdingLeft =  MoreSaves.settings.keybinds.PreviousPage.IsPressed;
             bool holdingRight = MoreSaves.settings.keybinds.NextPage.IsPressed;
+            bool pressedLockSave = MoreSaves.settings.keybinds.LockSave.IsPressed;
 
-            if (MoreSaves.settings.keybinds.NextPage.WasPressed && t - _lastInput > 0.05f)
+            if (CanLockSave)
             {
-                _firstInput = t;
+                if (pressedLockSave)
+                {
+                    CanLockSave = false;
+                    GameManager.instance.StartCoroutine(ReAllowLockingSaves());
+                    if (_selectedSaveSlot != null)
+                    {
+                        string filepath = Application.persistentDataPath +
+                                          GetLockFilename((int)_selectedSaveSlot.saveSlot);
+                        if (File.Exists(filepath))
+                        {
+                            _selectedSaveSlot.StartCoroutine(_uim.FadeInCanvasGroup(_selectedSaveSlot.clearSaveButton));
+                            File.Delete(filepath);
+                        }
+                        else
+                        {
+                            _selectedSaveSlot.StartCoroutine(
+                                _uim.FadeOutCanvasGroup(_selectedSaveSlot.clearSaveButton));
+                            FileStream fs = File.Create(filepath);
+                            fs.Close();
+                        }
+                    }
+                }
+            }
+
+            if (MoreSaves.settings.keybinds.NextPage.WasPressed && currentTime - _lastInput > 0.05f)
+            {
+                _firstInput = currentTime;
                 _queueRight++;
             }
 
-            if (MoreSaves.settings.keybinds.PreviousPage.WasPressed && t - _lastInput > 0.05f)
+            if (MoreSaves.settings.keybinds.PreviousPage.WasPressed && currentTime - _lastInput > 0.05f)
             {
-                _firstInput = t;
+                _firstInput = currentTime;
                 _queueLeft++;
             }
 
-            if (_queueRight == 0 && holdingRight && t - _firstInput > INPUT_WINDOW)
+            if (_queueRight == 0 && holdingRight && currentTime - _firstInput > INPUT_WINDOW)
                 _queueRight = 1;
-            if (_queueLeft == 0 && holdingLeft && t - _firstInput > INPUT_WINDOW)
+            if (_queueLeft == 0 && holdingLeft && currentTime - _firstInput > INPUT_WINDOW)
                 _queueLeft = 1;
 
-            if (_pagesHidden || !_pagesHidden && t - _lastPageTransition > TRANSISTION_TIME)
+            if (_pagesHidden || !_pagesHidden && currentTime - _lastPageTransition > TRANSISTION_TIME)
             {
-                if (_queueRight > 0 && t - _lastInput > INPUT_WINDOW / 2)
+                if (_queueRight > 0 && currentTime - _lastInput > INPUT_WINDOW / 2)
                 {
-                    _lastInput = t;
+                    _lastInput = currentTime;
                     _currentPage += _queueRight;
                     _queueRight = 0;
                     updateSaves = true;
                 }
 
-                if (_queueLeft > 0 && t - _lastInput > INPUT_WINDOW / 2)
+                if (_queueLeft > 0 && currentTime - _lastInput > INPUT_WINDOW / 2)
                 {
-                    _lastInput = t;
+                    _lastInput = currentTime;
                     _currentPage -= _queueLeft;
                     _queueLeft = 0;
                     updateSaves = true;
@@ -225,21 +262,21 @@ namespace MoreSaves
                 MoreSaves.PageLabel.text = $"Page {_currentPage + 1}/{_maxPages}";
             }
 
-            if (!_pagesHidden && updateSaves && t - _lastPageTransition > TRANSISTION_TIME)
+            if (!_pagesHidden && updateSaves && currentTime - _lastPageTransition > TRANSISTION_TIME)
             {
-                _lastPageTransition = t;
+                _lastPageTransition = currentTime;
                 _pagesHidden = true;
                 HideAllSaves();
             }
 
-            if (_pagesHidden && t - _lastInput > INPUT_WINDOW && t - _lastPageTransition > TRANSISTION_TIME)
+            if (_pagesHidden && currentTime - _lastInput > INPUT_WINDOW && currentTime - _lastPageTransition > TRANSISTION_TIME)
             {
-                _lastPageTransition = t;
+                _lastPageTransition = currentTime;
                 _pagesHidden = false;
                 ShowAllSaves();
             }
 
-            if (t - _lastPageTransition < TRANSISTION_TIME * 2) return;
+            if (currentTime - _lastPageTransition < TRANSISTION_TIME * 2) return;
 
             if (_pagesHidden || Slots.All(x => x.state != UnityEngine.UI.SaveSlotButton.SlotState.HIDDEN))
                 MoreSaves.PageLabel.CrossFadeAlpha(1, 0.25f, false);
@@ -294,12 +331,8 @@ namespace MoreSaves
             MoreSaves.PageLabel.text = $"Page {_currentPage + 1}/{_maxPages}";
         }
 
-        private void ClosingGameStuff()
+        private void SaveFileNames()
         {
-            if (!MoreSaves.settings.AutoBackup) return;
-
-            ModMenu.BackupSaves();
-
             ModMenu.SaveNameToFile();
         }
 
@@ -307,39 +340,72 @@ namespace MoreSaves
         private void SaveSlotButton_OnSubmit(On.UnityEngine.UI.SaveSlotButton.orig_OnSubmit orig, SaveSlotButton self, UnityEngine.EventSystems.BaseEventData eventData)
         {
             orig(self, eventData);
-
             GameManager.instance.profileID = GetNewSaveSlot(GameManager.instance.profileID);
         }
 
         // This may not be necessary, but I will leave it here just in case
         private string Platform_GetSaveSlotFileName(On.Platform.orig_GetSaveSlotFileName orig, Platform self, int slotIndex, int usage)
         {
-            //MoreSaves.Instance.Log("Platform_GetSaveSlotFileName: " + slotIndex);
-
             slotIndex = GetNewSaveSlot(slotIndex);
-
-            //MoreSaves.Instance.Log("Platform_GetSaveSlotFileName after: " + slotIndex);
-
             return orig(self, slotIndex, usage);
         }
 
         // Patch profileID before loading a save
         private void GameManager_LoadGame(On.GameManager.orig_LoadGame orig, GameManager self, int saveSlot, Action<bool> callback)
         {
-            //MoreSaves.Instance.Log("GameManager_LoadGame: " + saveSlot);
-
             saveSlot = GetNewSaveSlot(saveSlot);
-
-            //MoreSaves.Instance.Log("GameManager_LoadGame after: " + saveSlot);
-
             orig(self, saveSlot, callback);
         }
 
+        private IEnumerator SaveSlotButton_AnimateToSlotState(
+            On.UnityEngine.UI.SaveSlotButton.orig_AnimateToSlotState orig, SaveSlotButton self,
+            SaveSlotButton.SlotState nextState)
+        {
+            yield return orig(self, nextState);
+
+            //probably a better way to wait for the transition to end but good enough TM
+            yield return new WaitForSeconds(0.8f);
+
+            string filepath = Application.persistentDataPath + GetLockFilename((int)self.saveSlot);
+            if (File.Exists(filepath))
+            {
+                self.clearSaveButton.alpha = 0;
+                self.clearSaveButton.interactable = false;
+                self.clearSaveButton.gameObject.SetActive(false);
+                self.StartCoroutine(_uim.FadeOutCanvasGroup(self.clearSaveButton));
+            }
+        }
+
+        private void SaveSlotButton_OnDeselect(On.UnityEngine.UI.SaveSlotButton.orig_OnDeselect orig, SaveSlotButton self, UnityEngine.EventSystems.BaseEventData eventData)
+        {
+            _selectedSaveSlot = null;
+            orig(self, eventData);
+        }
+
+        private void SaveSlotButton_OnSelect(On.UnityEngine.UI.SaveSlotButton.orig_OnSelect orig, SaveSlotButton self, UnityEngine.EventSystems.BaseEventData eventData)
+        {
+            _selectedSaveSlot = self;
+            orig(self, eventData);
+        }
+        
         private int GetNewSaveSlot(int x)
         {
             x = x % 4 == 0 ? 4 : x % 4;
 
             return _currentPage * 4 + x;
+        }
+        
+        private string GetLockFilename(int x)
+        {
+            x = x % 4 == 0 ? 4 : x % 4;
+
+            return "/user" + (_currentPage * 4 + x) + ".protecc";
+        }
+
+        private IEnumerator ReAllowLockingSaves()
+        {
+            yield return new WaitForSeconds(0.5f);
+            CanLockSave = true;
         }
     }
 }

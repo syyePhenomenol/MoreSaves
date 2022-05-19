@@ -55,6 +55,9 @@
     <Reference Include="PlayMaker, Version=1.6.0.0, Culture=neutral, PublicKeyToken=null">
       <HintPath>$(HollowKnightFolder)\PlayMaker.dll</HintPath>
     </Reference>
+    <Reference Include="Satchel, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null">
+      <HintPath>$(HollowKnightFolder)\Mods\Satchel\Satchel.dll</HintPath>
+    </Reference>
     <Reference Include="UnityEngine">
       <HintPath>$(HollowKnightFolder)\UnityEngine.dll</HintPath>
     </Reference>

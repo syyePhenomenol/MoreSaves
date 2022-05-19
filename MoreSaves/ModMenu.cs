@@ -1,7 +1,6 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -13,9 +12,11 @@ using Modding.Menu;
 using Modding.Menu.Config;
 using Modding.Patches;
 using Newtonsoft.Json;
+using Satchel.BetterMenus;
 using UnityEngine;
 using UnityEngine.UI;
 using Logger = Modding.Logger;
+using MenuButton = UnityEngine.UI.MenuButton;
 
 // ReSharper disable StringLiteralTypo
 // ReSharper disable CommentTypo
@@ -25,6 +26,7 @@ namespace MoreSaves
 {
     internal static class ModMenu
     {
+        private static Menu MainMenuRef;
         private static MenuScreen MainMenu;
         private static MenuScreen RestoreSavesMenu;
         private static MenuScreen NameSavesMenu;
@@ -119,34 +121,46 @@ namespace MoreSaves
             if (!Directory.Exists(MoreSaves.BackupFolder))
                 Directory.CreateDirectory(MoreSaves.BackupFolder);
 
-            MainMenu = CreateMenuBuilder("MoreSaves Settings")
-                .AddContent(
-                    RegularGridLayout.CreateVerticalLayout(105f),
-                    c =>
-                    {
-                        c.AddScrollPaneContent(
-                            new ScrollbarConfig
-                            {
-                                CancelAction = _ => UIManager.instance.UIGoToDynamicMenu(modListMenu),
-                                Navigation = new Navigation
-                                {
-                                    mode = Navigation.Mode.Explicit,
-                                },
-                                Position = new AnchoredPosition
-                                {
-                                    ChildAnchor = new Vector2(0f, 1f),
-                                    ParentAnchor = new Vector2(1f, 1f),
-                                    Offset = new Vector2(-310f, 0f)
-                                }
-                            }, new RelLength(Directory.GetFiles(MoreSaves.BackupFolder).Length * 210f),
-                            RegularGridLayout.CreateVerticalLayout(105f),
-                            AddMainMenuContent);
-                    }
-                )
-                .AddBackButton(modListMenu)
-                .Build();
+            MainMenuRef ??= new Menu("MoreSaves Settings", new Element[]
+            {
+                new MenuRow(new List<Element>()
+                { 
+                    new KeyBind("Go to Next Page", MoreSaves.settings.keybinds.NextPage),
+                    new KeyBind("Go to Previous Page", MoreSaves.settings.keybinds.PreviousPage),
+                }, "PageTurnKeybinds"),
+                
+                new KeyBind("Lock Save", MoreSaves.settings.keybinds.LockSave),
+                Blueprints.NavigateToMenu("Edit a save","Pressing this will open a menu, which allows you to edit saves", () => EditChooseMenu),
+                new MenuRow(new List<Element>()
+                {
+                    new Satchel.BetterMenus.MenuButton("Back up Saves", "Click here to back up all saves", BackupSaves),
+                    Blueprints.NavigateToMenu("Restore Saves", "Pressing this will open a menu, which allows you to restore saves", () => RestoreSavesMenu)
+                }, "BackUpSaves"),
+                
+                new MenuRow(new List<Element>()
+                {
+                    new Satchel.BetterMenus.MenuButton("Make New Page", "Pressing this will increase the max page amount", 
+                        (_) =>
+                        {
+                            MoreSavesComponent._maxPages++;
+                            PlayerPrefs.SetInt("MaxPages", MoreSavesComponent._maxPages);
+                        }),
+                    new Satchel.BetterMenus.MenuButton("Remove Last Page",
+                        "Pressing this will delete the last page. Note: it will only delete the page if it is redundant", 
+                        RemoveLastPage)
+                }, "PageControl"),
+                
+                Blueprints.NavigateToMenu("Change name on save file",
+                    "Pressing this will open a menu, which allows you to change the name on saves", 
+                    () => NameSavesMenu),
+                new Satchel.BetterMenus.MenuButton("Need More Help? or Have Suggestions?","Join the Hollow Knight Modding Discord.", 
+                    (_) => Application.OpenURL("https://discord.gg/F6Y5TeFQ8j")),
 
-            //make other screens we need
+            });
+
+            MainMenu = MainMenuRef.GetMenuScreen(modListMenu);
+
+                //make other screens we need
             //we need to do this after main menu is built or else NREs go brrrr
             RestoreSavesMenu = CreateRestoreSavesMenu(MainMenu);
             NameSavesMenu = CreateNamingSaveFile(MainMenu);
@@ -156,153 +170,6 @@ namespace MoreSaves
             CreateInputPanel();
 
             return MainMenu;
-        }
-
-        private static void AddMainMenuContent(ContentArea c)
-        {
-            c.AddKeybind(
-                    "NextPage",
-                    MoreSaves.settings.keybinds.NextPage,
-                    new KeybindConfig
-                    {
-                        Label = "Go to Next Page",
-                        CancelAction = _ => UIManager.instance.UIGoToDynamicMenu(ModListMenu)
-                    })
-                .AddKeybind(
-                    "PreviousPage",
-                    MoreSaves.settings.keybinds.PreviousPage,
-                    new KeybindConfig
-                    {
-                        Label = "Go to Previous Page",
-                        CancelAction = _ => UIManager.instance.UIGoToDynamicMenu(ModListMenu),
-                    })
-                .AddHorizontalOption(
-                    "AutoBackup",
-                    new HorizontalOptionConfig
-                    {
-                        Label = "Enable Auto Backup",
-                        Options = new[] {"No", "Yes"},
-                        ApplySetting = (_, i) => { MoreSaves.settings.AutoBackup = i != 0; },
-                        RefreshSetting = (s, _) =>
-                            s.optionList.SetOptionTo(MoreSaves.settings.AutoBackup ? 1 : 0),
-                        CancelAction = _ => UIManager.instance.UIGoToDynamicMenu(ModListMenu),
-                        Style = HorizontalOptionStyle.VanillaStyle,
-                        Description = new DescriptionInfo
-                        {
-                            Text = "It will back up your saves just before you quit the game"
-                        }
-                    }, out var AutoBackupSelector);
-            AutoBackupSelector.menuSetting.RefreshValueFromGameSettings();
-
-            c.AddMenuButton(
-                    "BackUpSaves",
-                    new MenuButtonConfig
-                    {
-                        Label = "Back up Saves",
-                        SubmitAction = BackupSaves,
-                        CancelAction = _ => UIManager.instance.UIGoToDynamicMenu(ModListMenu),
-                        Description = new DescriptionInfo
-                        {
-                            Text = "Click here to back up all saves"
-                        }
-
-                    })
-                .AddMenuButton(
-                    "RestoreSavesButton",
-                    new MenuButtonConfig
-                    {
-                        Label = "Restore Saves",
-                        SubmitAction = _ => UIManager.instance.UIGoToDynamicMenu(RestoreSavesMenu),
-                        CancelAction = _ => UIManager.instance.UIGoToDynamicMenu(ModListMenu),
-                        Proceed = true,
-                        Description = new DescriptionInfo
-                        {
-                            Text = "Pressing this will open a menu, which allows you to restore saves"
-                        }
-
-                    }).AddMenuButton(
-                    "NameSaveFilesButton",
-                    new MenuButtonConfig
-                    {
-                        Label = "Change name on save file",
-                        SubmitAction = _ => { UIManager.instance.UIGoToDynamicMenu(NameSavesMenu); },
-                        CancelAction = _ => UIManager.instance.UIGoToDynamicMenu(ModListMenu),
-                        Proceed = true,
-                        Description = new DescriptionInfo
-                        {
-                            Text =
-                                "Pressing this will open a menu, which allows you to change the name on saves"
-                        }
-                    }).AddMenuButton(
-                    "EditSaveFile",
-                    new MenuButtonConfig
-                    {
-                        Label = "Edit a save",
-                        SubmitAction = _ => { UIManager.instance.UIGoToDynamicMenu(EditChooseMenu); },
-                        CancelAction = _ => UIManager.instance.UIGoToDynamicMenu(ModListMenu),
-                        Proceed = true,
-                        Description = new DescriptionInfo
-                        {
-                            Text = "Pressing this will open a menu, which allows you to edit saves"
-                        }
-                    })
-                .AddMenuButton(
-                "DiscordButton",
-                new MenuButtonConfig
-                {
-                    Label = "Need More Help? or Have Suggestions?",
-                    CancelAction = _ => UIManager.instance.UIGoToDynamicMenu(ModListMenu),
-                    SubmitAction = _ => Application.OpenURL("https://discord.gg/F6Y5TeFQ8j"),
-                    Proceed = true,
-                    Style = MenuButtonStyle.VanillaStyle,
-                    Description = new DescriptionInfo
-                    {
-                        Text = "Join the Hollow Knight Modding Discord."
-                    }
-                })
-                .AddMenuButton(
-                    "Saves",
-                    new MenuButtonConfig
-                    {
-                        Label = "Open Saves Folder",
-                        CancelAction = _ => UIManager.instance.UIGoToDynamicMenu(ModListMenu),
-                        SubmitAction = _ => Process.Start(Application.persistentDataPath),
-                        Proceed = true,
-                        Style = MenuButtonStyle.VanillaStyle,
-                        Description = new DescriptionInfo
-                        {
-                            Text = "Click to open saves folder"
-                        }
-                    })               
-                .AddMenuButton(
-                    "Make New Page",
-                    new MenuButtonConfig
-                    {
-                        Label = "Make New Page",
-                        SubmitAction = _ =>
-                        {
-                            MoreSavesComponent._maxPages++;
-
-                            PlayerPrefs.SetInt("MaxPages", MoreSavesComponent._maxPages);
-                        },
-                        CancelAction = _ => UIManager.instance.UIGoToDynamicMenu(ModListMenu),
-                        Description = new DescriptionInfo
-                        {
-                            Text = "Pressing this will increase the max page amount"
-                        }
-
-                    }).AddMenuButton(
-                    "Remove Last Page (if redundant)",
-                    new MenuButtonConfig
-                    {
-                        Label = "Remove Last Page",
-                        SubmitAction = RemoveLastPage,
-                        CancelAction = _ => UIManager.instance.UIGoToDynamicMenu(ModListMenu),
-                        Description = new DescriptionInfo
-                        {
-                            Text = "Pressing this will delete the last page. Note: it will only delete the page if it is redundant"
-                        }
-                    });    
         }
 
         private static void RemoveLastPage(MenuButton obj)
