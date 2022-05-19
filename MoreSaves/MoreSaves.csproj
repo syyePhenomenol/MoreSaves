@@ -6,7 +6,7 @@
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <LangVersion>latest</LangVersion>
-    <HollowKnightFolder>..\..\..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\Hollow Knight\hollow_knight_Data\Managed</HollowKnightFolder>
+    <HollowKnightFolder>C:\Program Files (x86)\Steam\steamapps\common\Hollow Knight\hollow_knight_Data\Managed</HollowKnightFolder>
     <ModsDirectory>C:\Program Files (x86)\Steam\steamapps\common\Hollow Knight\hollow_knight_Data\Managed\Mods\MoreSaves</ModsDirectory>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
@@ -15,6 +15,30 @@
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>
   </PropertyGroup>
+    <Target Name="CopyMod" AfterTargets="PostBuildEvent">
+	    <RemoveDir Directories="$(ExportDir)/$(TargetName)/" />
+	    <MakeDir Directories="$(ExportDir)/$(TargetName)/" />
+	    <MakeDir Directories="$(ExportDir)/$(TargetName)/zip/" />
+	    <MakeDir Condition="!Exists('$(HollowKnightFolder)/Mods/$(TargetName)/')" Directories="$(HollowKnightFolder)/Mods/$(TargetName)/" />
+	    <Copy SourceFiles="$(TargetPath);$(TargetDir)/$(TargetName).pdb" DestinationFolder="$(HollowKnightFolder)/Mods/$(TargetName)/" />
+	    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ExportDir)/$(TargetName)/" />
+	    <Copy SourceFiles="../README.md;$(TargetPath);$(TargetDir)/$(TargetName).pdb" DestinationFolder="$(ExportDir)/$(TargetName)/zip/" />
+	    <ZipDirectory SourceDirectory="$(ExportDir)/$(TargetName)/zip/" DestinationFile="$(ExportDir)/$(TargetName)/$(TargetName).zip" />
+	    <RemoveDir Directories="$(ExportDir)/$(TargetName)/zip/" />
+
+	    <GetFileHash Files="$(ExportDir)/$(TargetName)/$(TargetName).zip" Algorithm="SHA256">
+		    <Output TaskParameter="Items" ItemName="FilesWithHashes" />
+	    </GetFileHash>
+	    <WriteLinesToFile File="$(ExportDir)/$(TargetName)/SHA.txt" Lines="@(FilesWithHashes->'%(FileHash)')" Overwrite="true" Encoding="UTF-8" />
+
+	    <GetAssemblyIdentity AssemblyFiles="$(TargetPath)">
+		    <Output TaskParameter="Assemblies" ItemName="Targets" />
+	    </GetAssemblyIdentity>
+	    <ItemGroup>
+		    <VersionNumber Include="@(Targets->'%(Version)')" />
+	    </ItemGroup>
+	    <WriteLinesToFile File="$(ExportDir)/$(TargetName)/version.txt" Lines="@(VersionNumber)" Overwrite="true" Encoding="UTF-8" />
+    </Target>
   <ItemGroup>
     <Reference Include="Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null">
       <HintPath>$(HollowKnightFolder)\Assembly-CSharp.dll</HintPath>
@@ -23,7 +47,7 @@
       <HintPath>$(HollowKnightFolder)\MMHOOK_Assembly-CSharp.dll</HintPath>
     </Reference>
     <Reference Include="netstandard, Version=2.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51">
-      <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\Hollow Knight\hollow_knight_Data\Managed\netstandard.dll</HintPath>
+      <HintPath>$(HollowKnightFolder)\netstandard.dll</HintPath>
     </Reference>
     <Reference Include="Newtonsoft.Json, Version=11.0.0.0, Culture=neutral, PublicKeyToken=null">
       <HintPath>$(HollowKnightFolder)\Newtonsoft.Json.dll</HintPath>
@@ -65,8 +89,5 @@
   <ItemGroup>
     <EmbeddedResource Include="Resources\Input_BG.png" />
   </ItemGroup>
-  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
-  <Target Name="CopyMod" AfterTargets="PostBuildEvent">
-    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModsDirectory)" SkipUnchangedFiles="true" />
-  </Target>
+  <!--<Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />-->
 </Project>
