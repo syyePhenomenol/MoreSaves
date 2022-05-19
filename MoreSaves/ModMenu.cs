@@ -601,8 +601,6 @@ namespace MoreSaves
                             Label = $"Edit  Save {filenumber}",
                             SubmitAction = _ =>
                             {
-                                //UnityEngine.Object.Destroy(EditSavesMenu);
-                                //AllPDFields.Clear();
                                 CreateEditSavesMenu(EditChooseMenu, filenumber);
                                 UIManager.instance.UIGoToDynamicMenu(EditSavesMenu);
                             },
@@ -637,9 +635,18 @@ namespace MoreSaves
         private static void CreateEditSavesMenu(MenuScreen editChooseMenu, string filenumber)
         {
             EditSaveFileNumber = Int32.Parse(filenumber);
-            var SaveData = ReadFromSaveFile(EditSaveFileNumber);
-            EditSaveFilePlayerData = SaveData.PlayerData;
-            EditSaveFileSceneData = SaveData.SceneData;
+            if (GameManager.instance.profileID == EditSaveFileNumber)
+            {
+                EditSaveFilePlayerData = PlayerData.instance;
+                EditSaveFileSceneData = SceneData.instance;
+            }
+            else
+            {
+                var SaveData = ReadFromSaveFile(EditSaveFileNumber);
+                EditSaveFilePlayerData = SaveData.PlayerData;
+                EditSaveFileSceneData = SaveData.SceneData;
+            }
+
 
             if (EditSavesMenu != null)
             {
@@ -989,6 +996,13 @@ namespace MoreSaves
             var GM = GameManager.instance;
             PlayerData playerData = saveFileData.PlayerData;
             SceneData sceneData = saveFileData.SceneData;
+
+            if (GM.profileID == saveSlot)
+            {
+                Logger.Log($"profile ID is {GM.profileID}");
+                PlayerData.instance = GameManager.instance.playerData = HeroController.instance.playerData = saveFileData.PlayerData;
+                return;
+            }
 
             try
             {
