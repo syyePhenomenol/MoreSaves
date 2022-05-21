@@ -16,20 +16,20 @@
     <DebugType>pdbonly</DebugType>
   </PropertyGroup>
     <Target Name="CopyMod" AfterTargets="PostBuildEvent">
-	    <RemoveDir Directories="$(ExportDir)/$(TargetName)/" />
-	    <MakeDir Directories="$(ExportDir)/$(TargetName)/" />
-	    <MakeDir Directories="$(ExportDir)/$(TargetName)/zip/" />
+	    <RemoveDir Directories="$(ModsDirectory)/$(TargetName)/" />
+	    <MakeDir Directories="$(ModsDirectory)/$(TargetName)/" />
+	    <MakeDir Directories="$(ModsDirectory)/$(TargetName)/zip/" />
 	    <MakeDir Condition="!Exists('$(HollowKnightFolder)/Mods/$(TargetName)/')" Directories="$(HollowKnightFolder)/Mods/$(TargetName)/" />
 	    <Copy SourceFiles="$(TargetPath);$(TargetDir)/$(TargetName).pdb" DestinationFolder="$(HollowKnightFolder)/Mods/$(TargetName)/" />
-	    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ExportDir)/$(TargetName)/" />
-	    <Copy SourceFiles="../README.md;$(TargetPath);$(TargetDir)/$(TargetName).pdb" DestinationFolder="$(ExportDir)/$(TargetName)/zip/" />
-	    <ZipDirectory SourceDirectory="$(ExportDir)/$(TargetName)/zip/" DestinationFile="$(ExportDir)/$(TargetName)/$(TargetName).zip" />
-	    <RemoveDir Directories="$(ExportDir)/$(TargetName)/zip/" />
+	    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModsDirectory)/$(TargetName)/" />
+	    <Copy SourceFiles="../README.md;$(TargetPath);$(TargetDir)/$(TargetName).pdb" DestinationFolder="$(ModsDirectory)/$(TargetName)/zip/" />
+	    <ZipDirectory SourceDirectory="$(ModsDirectory)/$(TargetName)/zip/" DestinationFile="$(ModsDirectory)/$(TargetName)/$(TargetName).zip" />
+	    <RemoveDir Directories="$(ModsDirectory)/$(TargetName)/zip/" />
 
-	    <GetFileHash Files="$(ExportDir)/$(TargetName)/$(TargetName).zip" Algorithm="SHA256">
+	    <GetFileHash Files="$(ModsDirectory)/$(TargetName)/$(TargetName).zip" Algorithm="SHA256">
 		    <Output TaskParameter="Items" ItemName="FilesWithHashes" />
 	    </GetFileHash>
-	    <WriteLinesToFile File="$(ExportDir)/$(TargetName)/SHA.txt" Lines="@(FilesWithHashes->'%(FileHash)')" Overwrite="true" Encoding="UTF-8" />
+	    <WriteLinesToFile File="$(ModsDirectory)/$(TargetName)/SHA.txt" Lines="@(FilesWithHashes->'%(FileHash)')" Overwrite="true" Encoding="UTF-8" />
 
 	    <GetAssemblyIdentity AssemblyFiles="$(TargetPath)">
 		    <Output TaskParameter="Assemblies" ItemName="Targets" />
@@ -37,7 +37,7 @@
 	    <ItemGroup>
 		    <VersionNumber Include="@(Targets->'%(Version)')" />
 	    </ItemGroup>
-	    <WriteLinesToFile File="$(ExportDir)/$(TargetName)/version.txt" Lines="@(VersionNumber)" Overwrite="true" Encoding="UTF-8" />
+	    <WriteLinesToFile File="$(ModsDirectory)/$(TargetName)/version.txt" Lines="@(VersionNumber)" Overwrite="true" Encoding="UTF-8" />
     </Target>
   <ItemGroup>
     <Reference Include="Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null">
