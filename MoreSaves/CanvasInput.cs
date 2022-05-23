@@ -1,4 +1,5 @@
 ﻿using Modding;
+using Modding.Menu;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -58,7 +59,7 @@ namespace MoreSaves
             _textObject.AddComponent<RectTransform>().sizeDelta = new Vector2(bgSubSection.width, bgSubSection.height);
             Text textTxt = _textObject.AddComponent<Text>();
             textTxt.text = inputText;
-            textTxt.font = CanvasUtil.TrajanBold;
+            textTxt.font = MenuResources.NotoSerifCJKSCRegular;
             textTxt.fontSize = fontSize;
             textTxt.color = Color.black;
             textTxt.alignment = TextAnchor.MiddleCenter;

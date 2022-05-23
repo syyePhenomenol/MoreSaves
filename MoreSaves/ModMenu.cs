@@ -32,6 +32,7 @@ namespace MoreSaves
         private static MenuScreen NameSavesMenu;
         private static MenuScreen EditChooseMenu;
         private static MenuScreen EditSavesMenu;
+        private static MenuScreen EditSavesReturnConfirmMenu;
         private static MenuScreen ModListMenu;
 
         private static MenuOptionHorizontal ChangeNameHorizontalOption;
@@ -160,11 +161,13 @@ namespace MoreSaves
 
             MainMenu = MainMenuRef.GetMenuScreen(modListMenu);
 
-                //make other screens we need
+            //make other screens we need
             //we need to do this after main menu is built or else NREs go brrrr
             RestoreSavesMenu = CreateRestoreSavesMenu(MainMenu);
             NameSavesMenu = CreateNamingSaveFile(MainMenu);
             EditChooseMenu = CreateChooseEditSavesMenu(MainMenu);
+
+            EditSavesReturnConfirmMenu = CreateConfirmMenu(EditChooseMenu);
 
             //This creates the text input panel we need for getting text for save file naming
             CreateInputPanel();
@@ -274,7 +277,7 @@ namespace MoreSaves
                 //dont ask why x,y is 150,400 (im not sure either)
                 //800,100 is width and height taht looks good
                 new Rect(150, 400, 800, 100),
-                CanvasUtil.TrajanBold,
+                MenuResources.NotoSerifCJKSCRegular,
                 InputText,
                 GetFromNameDict(1),
                 36);
@@ -504,8 +507,29 @@ namespace MoreSaves
             EditSaveFileNumber = Int32.Parse(filenumber);
             if (GameManager.instance.profileID == EditSaveFileNumber)
             {
-                EditSaveFilePlayerData = PlayerData.instance;
-                EditSaveFileSceneData = SceneData.instance;
+                //create new instance of savegamedata for serilzation
+                var data = new SaveGameData(PlayerData.instance, SceneData.instance);
+                
+                //Serialize the data to a string (like what happens when writing to a save)
+                string strData = JsonConvert.SerializeObject(data, Formatting.Indented,
+                    new JsonSerializerSettings
+                    {
+                        ContractResolver = ShouldSerializeContractResolver.Instance,
+                        TypeNameHandling = TypeNameHandling.Auto,
+                        Converters = JsonConverterTypes.ConverterTypes
+                    });
+                //DeSerialize the data to a string (like what happens when reading to a save)
+                var dataCopy = JsonConvert.DeserializeObject<SaveGameData>(strData, new JsonSerializerSettings()
+                {
+                    ContractResolver = ShouldSerializeContractResolver.Instance,
+                    TypeNameHandling = TypeNameHandling.Auto,
+                    ObjectCreationHandling = ObjectCreationHandling.Replace,
+                    Converters = JsonConverterTypes.ConverterTypes
+                });
+                
+                //do a deep copy
+                EditSaveFilePlayerData = dataCopy.playerData;
+                EditSaveFileSceneData = dataCopy.sceneData;
             }
             else
             {
@@ -549,7 +573,8 @@ namespace MoreSaves
             else
             {
                 EditSavesMenu = CreateMenuBuilder("Edit Saves")
-                    .AddControlButton("Back", new Vector2(0f, -64f), SaveChanges, SaveChanges)
+                    .AddControlButton("Back", new Vector2(-200f, -64f), GoToConfirmMenu, GoToConfirmMenu)
+                    .AddControlButton("Apply", new Vector2(200f, -64f), GoToConfirmMenu, SaveAndExitEditSaveMenu)
                     .AddContent(new NullContentLayout(), c => c.AddScrollPaneContent(
                         new ScrollbarConfig
                         {
@@ -569,6 +594,15 @@ namespace MoreSaves
                         RegularGridLayout.CreateVerticalLayout(105f),
                         AddSaveFileContent
                     )).Build();
+                
+                AllPDFields.ForEach(go =>
+                {
+                    var texts = go.GetComponentsInChildren<Text>();
+                    foreach (var text in texts)
+                    {
+                        text.font = MenuResources.NotoSerifCJKSCRegular;
+                    }
+                });
             }
         }
         
@@ -590,7 +624,7 @@ namespace MoreSaves
                 new Vector2(GetCenter(0, true), GetCenter(0, false)),
                 Vector2.zero,
                 new Rect(0, 0, 600, 80),
-                CanvasUtil.TrajanBold,
+                MenuResources.NotoSerifCJKSCRegular,
                 InputText_EditSaves,
                 "Search bar",
                 36);
@@ -604,7 +638,7 @@ namespace MoreSaves
                 {
                     Label = "Search",
                     SubmitAction = DoSearch,
-                    CancelAction = SaveChanges,
+                    CancelAction = GoToConfirmMenu,
                     Proceed = false,
                     Style = MenuButtonStyle.VanillaStyle
                 });
@@ -632,7 +666,7 @@ namespace MoreSaves
                                 s.optionList.SetOptionTo(
                                     (bool)field.GetValue(EditSaveFilePlayerData) ? 0 : 1
                                 ),
-                            CancelAction = SaveChanges,
+                            CancelAction = GoToConfirmMenu,
                             Style = HorizontalOptionStyle.VanillaStyle,
                         }, out var BoolOption);
                     BoolOption.menuSetting.RefreshValueFromGameSettings();
@@ -650,7 +684,7 @@ namespace MoreSaves
                                 s.optionList.SetOptionTo(
                                     (int)field.GetValue(EditSaveFilePlayerData) + 100
                                 ),
-                            CancelAction = SaveChanges,
+                            CancelAction = GoToConfirmMenu,
                             Style = HorizontalOptionStyle.VanillaStyle,
                         }, out var IntOption);
                     IntOption.menuSetting.RefreshValueFromGameSettings();
@@ -664,7 +698,7 @@ namespace MoreSaves
                         new TextPanelConfig
                         {
                             Text = Name,
-                            Font = TextPanelConfig.TextFont.TrajanBold,
+                            Font = TextPanelConfig.TextFont.NotoSerifCJKSCRegular,
                             Size = 46,
                             Anchor = TextAnchor.MiddleLeft
                         }, out var TextPanelOption);
@@ -677,7 +711,7 @@ namespace MoreSaves
                             Screen.height / 2f),
                         Vector2.zero,
                         new Rect(0, 0, 500, 60),
-                        CanvasUtil.TrajanBold,
+                        MenuResources.NotoSerifCJKSCRegular,
                         InputText,
                         (string)field.GetValue(EditSaveFilePlayerData),
                         36);
@@ -691,7 +725,7 @@ namespace MoreSaves
                         new TextPanelConfig
                         {
                             Text = Name,
-                            Font = TextPanelConfig.TextFont.TrajanBold,
+                            Font = TextPanelConfig.TextFont.NotoSerifCJKSCRegular,
                             Size = 46,
                             Anchor = TextAnchor.MiddleLeft
                         }, out var TextPanelOption);
@@ -704,7 +738,7 @@ namespace MoreSaves
                             Screen.height / 2f),
                         Vector2.zero,
                         new Rect(0, 0, 500, 60),
-                        CanvasUtil.TrajanBold,
+                        MenuResources.NotoSerifCJKSCRegular,
                         InputText,
                         ((float)field.GetValue(EditSaveFilePlayerData)).ToString(),
                         36);
@@ -718,7 +752,7 @@ namespace MoreSaves
                         new TextPanelConfig
                         {
                             Text = Name,
-                            Font = TextPanelConfig.TextFont.TrajanBold,
+                            Font = TextPanelConfig.TextFont.NotoSerifCJKSCRegular,
                             Size = 46,
                             Anchor = TextAnchor.MiddleLeft
                         }, out var TextPanelOption);
@@ -731,7 +765,7 @@ namespace MoreSaves
                             Screen.height / 2f),
                         Vector2.zero,
                         new Rect(0, 0, 500, 60),
-                        CanvasUtil.TrajanBold,
+                        MenuResources.NotoSerifCJKSCRegular,
                         InputText,
                         ((Vector3)field.GetValue(EditSaveFilePlayerData)).ToString(),
                         36);
@@ -745,7 +779,7 @@ namespace MoreSaves
                         new TextPanelConfig
                         {
                             Text = Name + " (Cannot Edit List)",
-                            Font = TextPanelConfig.TextFont.TrajanBold,
+                            Font = TextPanelConfig.TextFont.NotoSerifCJKSCRegular,
                             Size = 46,
                             Anchor = TextAnchor.MiddleLeft,
                         }, out var ListObj);
@@ -754,10 +788,61 @@ namespace MoreSaves
             }
         }
 
-        private static void SaveChanges(MenuSelectable obj)
+        private static MenuScreen CreateConfirmMenu(MenuScreen returnScreen)
+        {
+            void DontSave(MenuSelectable _)
+            {
+                AllInputs.Clear();
+                UIManager.instance.UIGoToDynamicMenu(EditChooseMenu);
+            }
+            return CreateMenuBuilder("")
+                .AddContent(RegularGridLayout.CreateVerticalLayout(105f),
+                    c =>
+                    {
+                        c.AddTextPanel("MainPrompt", new RelVector2(new Vector2(1000, 105f)), new TextPanelConfig()
+                        {
+                            Anchor = TextAnchor.MiddleCenter,
+                            Font = TextPanelConfig.TextFont.TrajanBold,
+                            Size = 55,
+                            Text = "Do You Want To Save",
+                        }, out _);
+                        c.AddTextPanel("SubPrompt", new RelVector2(new Vector2(1000, 105f)), new TextPanelConfig()
+                        {
+                            Anchor = TextAnchor.MiddleCenter,
+                            Font = TextPanelConfig.TextFont.TrajanBold,
+                            Size = 39,
+                            Text = "Changes to the save file",
+                        }, out _);
+                        c.AddMenuButton("Save", new MenuButtonConfig()
+                        {
+                            Label = "Save Edits",
+                            SubmitAction = SaveAndExitEditSaveMenu,
+                            CancelAction = DontSave,
+                        });
+                        c.AddMenuButton("DSave", new MenuButtonConfig()
+                        {
+                            Label = "Dont Save",
+                            SubmitAction = DontSave,
+                            CancelAction = DontSave,
+                        });
+                        c.AddMenuButton("Confused", new MenuButtonConfig()
+                        {
+                            Label = "Return to Edit Saves",
+                            SubmitAction = _ => UIManager.instance.UIGoToDynamicMenu(EditSavesMenu),
+                            CancelAction = DontSave,
+                        });
+                    })
+                .Build();
+        }
+
+        private static void GoToConfirmMenu(MenuSelectable obj)
+        {
+            UIManager.instance.UIGoToDynamicMenu(EditSavesReturnConfirmMenu);
+        }
+
+        private static void SaveAndExitEditSaveMenu(MenuSelectable _)
         {
             UIManager.instance.UIGoToDynamicMenu(EditChooseMenu);
-
             foreach (var inputFieldInfo in AllInputs.Where(inputFieldInfo => inputFieldInfo.Input.GetText().Trim(' ') != ""))
             {
                 if (inputFieldInfo.InputType == typeof(string))
@@ -866,7 +951,6 @@ namespace MoreSaves
 
             if (GM.profileID == saveSlot)
             {
-                Logger.Log($"profile ID is {GM.profileID}");
                 PlayerData.instance = GameManager.instance.playerData = HeroController.instance.playerData = saveFileData.PlayerData;
                 return;
             }
