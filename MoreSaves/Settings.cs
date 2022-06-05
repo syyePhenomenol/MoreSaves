@@ -24,13 +24,11 @@ namespace MoreSaves
     {
         public PlayerAction NextPage;
         public PlayerAction PreviousPage;
-        public PlayerAction LockSave;
 
         public KeyBinds()
         {
             NextPage = CreatePlayerAction("NextPage");
             PreviousPage = CreatePlayerAction("PreviousPage");
-            LockSave = CreatePlayerAction("LockSave");
             DefaultBinds();
         }
 
@@ -38,7 +36,6 @@ namespace MoreSaves
         {
             NextPage.AddDefaultBinding(Key.RightBracket);
             PreviousPage.AddDefaultBinding(Key.LeftBracket);
-            PreviousPage.AddDefaultBinding(InputHandler.Instance.inputActions.dreamNail.GetKeyOrMouseBinding().Key);
         }
     }
 }

@@ -130,7 +130,6 @@ namespace MoreSaves
                     new KeyBind("Go to Previous Page", MoreSaves.settings.keybinds.PreviousPage),
                 }, "PageTurnKeybinds"),
                 
-                new KeyBind("Lock Save", MoreSaves.settings.keybinds.LockSave),
                 Blueprints.NavigateToMenu("Edit a save","Pressing this will open a menu, which allows you to edit saves", () => EditChooseMenu),
                 new MenuRow(new List<Element>()
                 {
