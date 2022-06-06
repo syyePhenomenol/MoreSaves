@@ -6,6 +6,7 @@ using System.Linq;
 using GlobalEnums;
 using InControl;
 using Modding;
+using MonoMod.RuntimeDetour;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
@@ -38,8 +39,9 @@ namespace MoreSaves
         };
 
         private static GameManager _gm => GameManager.instance;
-
         private static UIManager _uim => UIManager.instance;
+
+        private static Hook ModdedSavePath;
 
         private void Start()
         {
@@ -53,8 +55,10 @@ namespace MoreSaves
 
             UnLoadHooks();
             LoadHooks();
+
+            ModdedSavePath = new Hook(ReflectionHelper.GetMethodInfo(typeof(GameManager), "ModdedSavePath", false), EditModdedSavePath);
         }
-        
+
         private void UnLoadHooks()
         {
             UnityEngine.SceneManagement.SceneManager.activeSceneChanged -= SceneChanged;
@@ -273,12 +277,11 @@ namespace MoreSaves
             else
                 MoreSaves.PageLabel.CrossFadeAlpha(0, 0.25f, false);
         }
-        
+
         public void HideOne() => _uim.slotOne.HideSaveSlot();
         public void HideTwo() => _uim.slotTwo.HideSaveSlot();
         public void HideThree() => _uim.slotThree.HideSaveSlot();
         public void HideFour() => _uim.slotFour.HideSaveSlot();
-        
 
         public void HideAllSaves()
         {
@@ -290,15 +293,15 @@ namespace MoreSaves
 
         public void ShowAllSaves()
         {
-            MoreSaves.Instance.Log("[MoreSaves] Showing All Saves");
+            //MoreSaves.Instance.Log("[MoreSaves] Showing All Saves");
 
             foreach (SaveSlotButton s in Slots)
             {
                 s._prepare(_gm);
-                s.ShowRelevantModeForSaveFileState();
+                //s.ShowRelevantModeForSaveFileState();
             }
 
-            _uim.StartCoroutine(_uim.GoToProfileMenu());
+            //_uim.StartCoroutine(_uim.GoToProfileMenu());
         }
         private void SaveFileNames()
         {
@@ -341,6 +344,13 @@ namespace MoreSaves
                 }
             }
         }
+
+        // Makes MenuChanger work properly
+        private string EditModdedSavePath(Func<int, string> orig, int saveSlot)
+        {
+            return orig(GetNewSaveSlot(saveSlot));
+        }
+
         private int GetNewSaveSlot(int x)
         {
             x = x % 4 == 0 ? 4 : x % 4;
