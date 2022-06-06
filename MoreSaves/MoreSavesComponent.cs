@@ -6,6 +6,7 @@ using System.Linq;
 using GlobalEnums;
 using InControl;
 using Modding;
+using MonoMod.RuntimeDetour;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
@@ -18,7 +19,7 @@ namespace MoreSaves
 {
     internal class MoreSavesComponent : MonoBehaviour
     {
-        private const int MIN_PAGES = 2;
+        private const int MAX_PAGE_LIMIT = 25;
         private const float  TRANSISTION_TIME = 0.5f;
         private const float INPUT_WINDOW = 0.4f;
         
@@ -38,30 +39,28 @@ namespace MoreSaves
         };
 
         private static GameManager _gm => GameManager.instance;
-
         private static UIManager _uim => UIManager.instance;
+
+        private static Hook ModdedSavePath;
 
         private void Start()
         {
             _pagesHidden = false;
 
-            _maxPages = PlayerPrefs.GetInt("MaxPages", MIN_PAGES);
-
-            _maxPages = Math.Max(_maxPages, MIN_PAGES);
-
-            MoreSaves.PageLabel.text = $"Page {_currentPage + 1}/{_maxPages}";
+            SetMaxPages();
+            UpdatePageLabel();
 
             DontDestroyOnLoad(this);
 
             UnLoadHooks();
             LoadHooks();
         }
-        
+
         private void UnLoadHooks()
         {
             UnityEngine.SceneManagement.SceneManager.activeSceneChanged -= SceneChanged;
-            ModHooks.SavegameSaveHook -= CheckAddMaxPages;
-            ModHooks.SavegameClearHook -= CheckRemoveMaxPages;
+            ModHooks.SavegameSaveHook -= ModHooks_SavegameSaveHook;
+            ModHooks.SavegameClearHook -= ModHooks_SavegameClearHook;
             ModHooks.ApplicationQuitHook -= SaveFileNames;
             On.UnityEngine.UI.SaveSlotButton.PresentSaveSlot -= ChangeSaveFileText;
             On.UnityEngine.UI.SaveSlotButton.AnimateToSlotState -= FixNewSaveNumber;
@@ -74,8 +73,8 @@ namespace MoreSaves
         private void LoadHooks()
         {
             UnityEngine.SceneManagement.SceneManager.activeSceneChanged += SceneChanged;
-            ModHooks.SavegameSaveHook += CheckAddMaxPages;
-            ModHooks.SavegameClearHook += CheckRemoveMaxPages;
+            ModHooks.SavegameSaveHook += ModHooks_SavegameSaveHook;
+            ModHooks.SavegameClearHook += ModHooks_SavegameClearHook;
             ModHooks.ApplicationQuitHook += SaveFileNames;
             
             //reconstruct some functions to facilitate changing saves name and number
@@ -87,8 +86,51 @@ namespace MoreSaves
             On.UnityEngine.UI.SaveSlotButton.OnSubmit += SaveSlotButton_OnSubmit;
             On.Platform.GetSaveSlotFileName += Platform_GetSaveSlotFileName;
             On.GameManager.LoadGame += GameManager_LoadGame;
+
+            //make MenuChanger work
+            ModdedSavePath = new Hook(ReflectionHelper.GetMethodInfo(typeof(GameManager), "ModdedSavePath", false), EditModdedSavePath);
         }
 
+        private void ModHooks_SavegameClearHook(int _)
+        {
+            SetMaxPages();
+        }
+
+        private void ModHooks_SavegameSaveHook(int _)
+        {
+            SetMaxPages();
+        }
+
+        private void SetMaxPages()
+        {
+            IEnumerable<string> saveFiles = Directory.GetFiles(Application.persistentDataPath, "user*.dat")
+                .Select(s => Path.GetFileName(s).Replace("user", "").Replace(".dat", ""))
+                .Where(s => int.TryParse(s, out int _));
+
+            if (!saveFiles.Any())
+            {
+                _maxPages = 1;
+                return;
+            }
+
+            IEnumerable<int> lastFourSaves = saveFiles.Select(s => int.Parse(s)).OrderByDescending(s => s).Take(4);
+
+            int maxSavePage = GetSavePage(lastFourSaves.First());
+
+            if (lastFourSaves.Count() == 4 && lastFourSaves.All(s => GetSavePage(s) == maxSavePage))
+            {
+                _maxPages = Math.Min(MAX_PAGE_LIMIT, maxSavePage + 1);
+            }
+            else
+            {
+                _maxPages = Math.Min(MAX_PAGE_LIMIT, maxSavePage);
+            }
+        }
+
+        private int GetSavePage(int x)
+        {
+            return (x - 1) / 4 + 1;
+        }
 
         //checks for mouse 1 being input when mapping keys and yeets it if found
         private bool IHateMouse1(On.MappableKey.orig_OnBindingFound orig, MappableKey self, PlayerAction action,
@@ -211,7 +253,7 @@ namespace MoreSaves
 
                 if (_currentPage < 0) _currentPage = _maxPages - 1;
 
-                MoreSaves.PageLabel.text = $"Page {_currentPage + 1}/{_maxPages}";
+                UpdatePageLabel();
             }
 
             if (!_pagesHidden && updateSaves && currentTime - _lastPageTransition > TRANSISTION_TIME)
@@ -235,52 +277,21 @@ namespace MoreSaves
             else
                 MoreSaves.PageLabel.CrossFadeAlpha(0, 0.25f, false);
         }
-        
-        public void HideOne() => _uim.slotOne.HideSaveSlot();
-        public void HideTwo() => _uim.slotTwo.HideSaveSlot();
-        public void HideThree() => _uim.slotThree.HideSaveSlot();
-        public void HideFour() => _uim.slotFour.HideSaveSlot();
-        
 
         public void HideAllSaves()
         {
-            Invoke(nameof(HideOne), 0);
-            Invoke(nameof(HideTwo), 0);
-            Invoke(nameof(HideThree), 0);
-            Invoke(nameof(HideFour), 0);
+            _uim.slotOne.HideSaveSlot();
+            _uim.slotTwo.HideSaveSlot();
+            _uim.slotThree.HideSaveSlot();
+            _uim.slotFour.HideSaveSlot();
         }
 
         public void ShowAllSaves()
         {
-            MoreSaves.Instance.Log("[MoreSaves] Showing All Saves");
-
             foreach (SaveSlotButton s in Slots)
             {
                 s._prepare(_gm);
-                s.ShowRelevantModeForSaveFileState();
             }
-
-            _uim.StartCoroutine(_uim.GoToProfileMenu());
-        }
-
-        private void CheckAddMaxPages(int x)
-        {
-            if (_currentPage == _maxPages - 1) _maxPages++;
-
-            PlayerPrefs.SetInt("MaxPages", _maxPages);
-        }
-
-        private void CheckRemoveMaxPages(int x)
-        {
-            if
-            (
-                (_currentPage == _maxPages || _currentPage == _maxPages - 1) &&
-                Enumerable.Range(1, 8).Any(i => File.Exists($"{Application.persistentDataPath}/user{(_maxPages - 1) * 4 + i}.dat"))
-            )
-                return;
-
-            PlayerPrefs.SetInt("MaxPages", --_maxPages);
-            MoreSaves.PageLabel.text = $"Page {_currentPage + 1}/{_maxPages}";
         }
 
         private void SaveFileNames()
@@ -314,7 +325,7 @@ namespace MoreSaves
             yield return orig(self, nextState);
             
             //fix file numbers for empty slots
-            if (nextState == SaveSlotButton.SlotState.EMPTY_SLOT && self.slotNumberText != null)
+            if (nextState == SaveSlotButton.SlotState.EMPTY_SLOT && self != null)
             {
                 int slotnumber = ConvertSlotToNumber(self);
                 Text slotNumberText = self.slotNumberText.GetComponent<Text>();
@@ -322,8 +333,18 @@ namespace MoreSaves
                 {
                     slotNumberText.text = (_currentPage * 4 + slotnumber).ToString();
                 }
-                
             }
+        }
+
+        // Makes MenuChanger work properly
+        private string EditModdedSavePath(Func<int, string> orig, int saveSlot)
+        {
+            return orig(GetNewSaveSlot(saveSlot));
+        }
+
+        private void UpdatePageLabel()
+        {
+            MoreSaves.PageLabel.text = $"Page {_currentPage + 1}/{_maxPages}";
         }
 
         private int GetNewSaveSlot(int x)
