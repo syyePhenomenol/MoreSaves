@@ -278,31 +278,22 @@ namespace MoreSaves
                 MoreSaves.PageLabel.CrossFadeAlpha(0, 0.25f, false);
         }
 
-        public void HideOne() => _uim.slotOne.HideSaveSlot();
-        public void HideTwo() => _uim.slotTwo.HideSaveSlot();
-        public void HideThree() => _uim.slotThree.HideSaveSlot();
-        public void HideFour() => _uim.slotFour.HideSaveSlot();
-
         public void HideAllSaves()
         {
-            Invoke(nameof(HideOne), 0);
-            Invoke(nameof(HideTwo), 0);
-            Invoke(nameof(HideThree), 0);
-            Invoke(nameof(HideFour), 0);
+            _uim.slotOne.HideSaveSlot();
+            _uim.slotTwo.HideSaveSlot();
+            _uim.slotThree.HideSaveSlot();
+            _uim.slotFour.HideSaveSlot();
         }
 
         public void ShowAllSaves()
         {
-            //MoreSaves.Instance.Log("[MoreSaves] Showing All Saves");
-
             foreach (SaveSlotButton s in Slots)
             {
                 s._prepare(_gm);
-                //s.ShowRelevantModeForSaveFileState();
             }
-
-            //_uim.StartCoroutine(_uim.GoToProfileMenu());
         }
+
         private void SaveFileNames()
         {
             ModMenu.SaveNameToFile();
