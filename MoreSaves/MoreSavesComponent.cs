@@ -87,15 +87,16 @@ namespace MoreSaves
             On.Platform.GetSaveSlotFileName += Platform_GetSaveSlotFileName;
             On.GameManager.LoadGame += GameManager_LoadGame;
 
+            //make MenuChanger work
             ModdedSavePath = new Hook(ReflectionHelper.GetMethodInfo(typeof(GameManager), "ModdedSavePath", false), EditModdedSavePath);
         }
 
-        private void ModHooks_SavegameClearHook(int obj)
+        private void ModHooks_SavegameClearHook(int _)
         {
             SetMaxPages();
         }
 
-        private void ModHooks_SavegameSaveHook(int obj)
+        private void ModHooks_SavegameSaveHook(int _)
         {
             SetMaxPages();
         }

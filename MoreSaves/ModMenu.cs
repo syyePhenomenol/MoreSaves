@@ -137,19 +137,6 @@ namespace MoreSaves
                     Blueprints.NavigateToMenu("Restore Saves", "Pressing this will open a menu, which allows you to restore saves", () => RestoreSavesMenu)
                 }, "BackUpSaves"),
                 
-                //new MenuRow(new List<Element>()
-                //{
-                //    new Satchel.BetterMenus.MenuButton("Make New Page", "Pressing this will increase the max page amount", 
-                //        (_) =>
-                //        {
-                //            MoreSavesComponent._maxPages++;
-                //            PlayerPrefs.SetInt("MaxPages", MoreSavesComponent._maxPages);
-                //        }),
-                //    new Satchel.BetterMenus.MenuButton("Remove Last Page",
-                //        "Pressing this will delete the last page. Note: it will only delete the page if it is redundant", 
-                //        RemoveLastPage)
-                //}, "PageControl"),
-                
                 Blueprints.NavigateToMenu("Change name on save file",
                     "Pressing this will open a menu, which allows you to change the name on saves", 
                     () => NameSavesMenu),
@@ -173,17 +160,6 @@ namespace MoreSaves
 
             return MainMenu;
         }
-
-        //private static void RemoveLastPage(MenuButton obj)
-        //{
-        //    if (Enumerable.Range(1, 8).Any(i =>
-        //        File.Exists(
-        //            $"{Application.persistentDataPath}/user{(MoreSavesComponent._maxPages - 1) * 4 + i}.dat")))
-        //        return;
-        //    PlayerPrefs.SetInt("MaxPages", --MoreSavesComponent._maxPages);
-        //    MoreSaves.PageLabel.text =
-        //        $"Page {MoreSavesComponent._currentPage + 1}/{MoreSavesComponent._maxPages}";
-        //}
 
         #endregion
 
