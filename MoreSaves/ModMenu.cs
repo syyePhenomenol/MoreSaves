@@ -174,16 +174,16 @@ namespace MoreSaves
             return MainMenu;
         }
 
-        private static void RemoveLastPage(MenuButton obj)
-        {
-            if (Enumerable.Range(1, 8).Any(i =>
-                File.Exists(
-                    $"{Application.persistentDataPath}/user{(MoreSavesComponent._maxPages - 1) * 4 + i}.dat")))
-                return;
-            PlayerPrefs.SetInt("MaxPages", --MoreSavesComponent._maxPages);
-            MoreSaves.PageLabel.text =
-                $"Page {MoreSavesComponent._currentPage + 1}/{MoreSavesComponent._maxPages}";
-        }
+        //private static void RemoveLastPage(MenuButton obj)
+        //{
+        //    if (Enumerable.Range(1, 8).Any(i =>
+        //        File.Exists(
+        //            $"{Application.persistentDataPath}/user{(MoreSavesComponent._maxPages - 1) * 4 + i}.dat")))
+        //        return;
+        //    PlayerPrefs.SetInt("MaxPages", --MoreSavesComponent._maxPages);
+        //    MoreSaves.PageLabel.text =
+        //        $"Page {MoreSavesComponent._currentPage + 1}/{MoreSavesComponent._maxPages}";
+        //}
 
         #endregion
 

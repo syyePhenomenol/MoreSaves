@@ -48,15 +48,12 @@ namespace MoreSaves
             _pagesHidden = false;
 
             SetMaxPages();
-
-            MoreSaves.PageLabel.text = $"Page {_currentPage + 1}/{_maxPages}";
+            UpdatePageLabel();
 
             DontDestroyOnLoad(this);
 
             UnLoadHooks();
             LoadHooks();
-
-            ModdedSavePath = new Hook(ReflectionHelper.GetMethodInfo(typeof(GameManager), "ModdedSavePath", false), EditModdedSavePath);
         }
 
         private void UnLoadHooks()
@@ -89,6 +86,8 @@ namespace MoreSaves
             On.UnityEngine.UI.SaveSlotButton.OnSubmit += SaveSlotButton_OnSubmit;
             On.Platform.GetSaveSlotFileName += Platform_GetSaveSlotFileName;
             On.GameManager.LoadGame += GameManager_LoadGame;
+
+            ModdedSavePath = new Hook(ReflectionHelper.GetMethodInfo(typeof(GameManager), "ModdedSavePath", false), EditModdedSavePath);
         }
 
         private void ModHooks_SavegameClearHook(int obj)
@@ -117,7 +116,7 @@ namespace MoreSaves
 
             int maxSavePage = GetSavePage(lastFourSaves.First());
 
-            if (lastFourSaves.All(s => GetSavePage(s) == maxSavePage))
+            if (lastFourSaves.Count() == 4 && lastFourSaves.All(s => GetSavePage(s) == maxSavePage))
             {
                 _maxPages = Math.Min(MAX_PAGE_LIMIT, maxSavePage + 1);
             }
@@ -253,7 +252,7 @@ namespace MoreSaves
 
                 if (_currentPage < 0) _currentPage = _maxPages - 1;
 
-                MoreSaves.PageLabel.text = $"Page {_currentPage + 1}/{_maxPages}";
+                UpdatePageLabel();
             }
 
             if (!_pagesHidden && updateSaves && currentTime - _lastPageTransition > TRANSISTION_TIME)
@@ -325,7 +324,7 @@ namespace MoreSaves
             yield return orig(self, nextState);
             
             //fix file numbers for empty slots
-            if (nextState == SaveSlotButton.SlotState.EMPTY_SLOT && self != null && self.slotNumberText != null)
+            if (nextState == SaveSlotButton.SlotState.EMPTY_SLOT && self != null)
             {
                 int slotnumber = ConvertSlotToNumber(self);
                 Text slotNumberText = self.slotNumberText.GetComponent<Text>();
@@ -340,6 +339,11 @@ namespace MoreSaves
         private string EditModdedSavePath(Func<int, string> orig, int saveSlot)
         {
             return orig(GetNewSaveSlot(saveSlot));
+        }
+
+        private void UpdatePageLabel()
+        {
+            MoreSaves.PageLabel.text = $"Page {_currentPage + 1}/{_maxPages}";
         }
 
         private int GetNewSaveSlot(int x)
