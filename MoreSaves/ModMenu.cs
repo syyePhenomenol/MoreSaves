@@ -153,7 +153,7 @@ namespace MoreSaves
             NameSavesMenu = CreateNamingSaveFile(MainMenu);
             EditChooseMenu = CreateChooseEditSavesMenu(MainMenu);
 
-            EditSavesReturnConfirmMenu = CreateConfirmMenu(EditChooseMenu);
+            EditSavesReturnConfirmMenu = CreateConfirmMenu();
 
             //This creates the text input panel we need for getting text for save file naming
             CreateInputPanel();
@@ -762,14 +762,17 @@ namespace MoreSaves
                 }
             }
         }
+        
+        private static string GetConfirmMenuSubPrompt => $"To save file {EditSaveFileNumber}";
 
-        private static MenuScreen CreateConfirmMenu(MenuScreen returnScreen)
+        private static MenuScreen CreateConfirmMenu()
         {
             void DontSave(MenuSelectable _)
             {
                 AllInputs.Clear();
                 UIManager.instance.UIGoToDynamicMenu(EditChooseMenu);
             }
+            
             return CreateMenuBuilder("")
                 .AddContent(RegularGridLayout.CreateVerticalLayout(105f),
                     c =>
@@ -779,14 +782,14 @@ namespace MoreSaves
                             Anchor = TextAnchor.MiddleCenter,
                             Font = TextPanelConfig.TextFont.TrajanBold,
                             Size = 55,
-                            Text = "Do You Want To Save",
+                            Text = "Do You Want To Save Changes",
                         }, out _);
                         c.AddTextPanel("SubPrompt", new RelVector2(new Vector2(1000, 105f)), new TextPanelConfig()
                         {
                             Anchor = TextAnchor.MiddleCenter,
                             Font = TextPanelConfig.TextFont.TrajanBold,
                             Size = 39,
-                            Text = "Changes to the save file",
+                            Text = GetConfirmMenuSubPrompt,
                         }, out _);
                         c.AddMenuButton("Save", new MenuButtonConfig()
                         {
@@ -810,8 +813,9 @@ namespace MoreSaves
                 .Build();
         }
 
-        private static void GoToConfirmMenu(MenuSelectable obj)
+        private static void GoToConfirmMenu(MenuSelectable _)
         {
+            EditSavesReturnConfirmMenu.content.transform.Find("SubPrompt").gameObject.GetComponent<Text>().text = GetConfirmMenuSubPrompt;
             UIManager.instance.UIGoToDynamicMenu(EditSavesReturnConfirmMenu);
         }
 
@@ -920,6 +924,7 @@ namespace MoreSaves
 
         private static void WriteToSaveFile(int saveSlot, SaveFileData saveFileData)
         {
+            Logger.Log(saveSlot);
             var GM = GameManager.instance;
             PlayerData playerData = saveFileData.PlayerData;
             SceneData sceneData = saveFileData.SceneData;
