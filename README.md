@@ -12,6 +12,5 @@ The default binds are \[ and \] but they can be changed in the ingame menu (whic
     * Back up saves
     * Restore saves
     * Rename save files
-    * Lock save files (remove the clear button)
 
 Note: Editing save you are currently in, now actually takes effect in game.
